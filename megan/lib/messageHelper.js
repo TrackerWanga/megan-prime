@@ -1,5 +1,5 @@
 // Megan-Prime Message Helper - Complete Message Processing
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
 
 class MessageHelper {
     static extractText(message) {

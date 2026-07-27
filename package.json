@@ -2,39 +2,35 @@
   "name": "megan-prime",
   "version": "1.0.0",
   "description": "Megan-Prime Perfect Bot made by Baileys",
-  "main": "index.js",
+  "main": "lib/index.js",
   "scripts": {
     "start": "bash start.sh",
     "dev": "nodemon index.js",
     "migrate": "node megan/scripts/migrateToSQLite.js",
-    "postinstall": "npm rebuild sqlite3 sharp",
     "rebuild": "npm rebuild sqlite3 sharp"
   },
   "dependencies": {
-    "@faker-js/faker": "^9.4.0",
+    "@faker-js/faker": "^10.5.0",
     "@hapi/boom": "^10.0.1",
-    "@iamtraction/google-translate": "^2.0.1",
-    "axios": "^1.13.6",
+    "@whiskeysockets/baileys": "npm:megan-baileys@^1.0.11",
+    "axios": "^1.18.1",
+    "chalk": "^4.1.2",
     "cheerio": "^1.2.0",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.4.5",
-    "form-data": "^4.0.5",
     "fs-extra": "^11.3.4",
-    "gifted-baileys": "^2.5.8",
     "gifted-btns": "^1.0.2",
-    "google-tts-api": "^2.0.2",
-    "jimp": "^1.6.0",
-    "mathjs": "*",
+    "jimp": "^1.6.1",
+    "mathjs": "^15.2.0",
+    "megan-baileys": "^1.0.11",
     "moment-timezone": "^0.6.0",
-    "morse": "*",
+    "morse": "^0.1.0",
+    "n8n-nodes-whatsapp-buttons": "^1.0.2",
     "node-cache": "^5.1.2",
-    "node-cron": "^3.0.3",
-    "path": "^0.12.7",
     "pino": "^8.21.0",
     "sequelize": "^6.37.3",
     "sharp": "0.32.6",
     "socket.io": "^4.8.3",
-    "sql.js": "^1.12.0",
     "sqlite3": "^5.1.7",
     "uuid": "^9.0.1",
     "wa-sticker-formatter": "^4.4.4"
@@ -46,5 +42,12 @@
     "node": ">=20.x"
   },
   "author": "TrackerWanga",
-  "license": "MIT"
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.js",
+      "types": "./lib/index.d.ts"
+    }
+  }
 }

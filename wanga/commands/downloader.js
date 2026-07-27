@@ -11,8 +11,8 @@ const { sendButtons } = require('gifted-btns');
 
 const commands = [];
 
-const API_BASE = 'https://apis.megan.qzz.io';
-const API_KEY = 'megan_admin_master';
+const API_BASE = require('../../megan/lib/developer').API_BASE;
+const API_KEY = require('../../megan/lib/developer').API_KEY;
 const CHANNEL_LINK = 'https://whatsapp.com/channel/0029Vb7FYNA8qIzs2P5dcE37';
 const TEMP_DIR = path.join(__dirname, '../../temp');
 const FOOTER = '> Megan-Prime | TrackerWanga';
@@ -139,7 +139,7 @@ function extractSpotifyId(input) {
 async function downloadAndSendAudio(sock, from, data, extraCaption, msg) {
     let tempFile = null;
     try {
-        const dlUrl = data.downloadUrl || data.proxyUrl;
+        const dlUrl = data.proxyUrl || data.downloadUrl;
         if (!dlUrl) throw new Error('No download URL');
 
         const filename = `${Date.now()}_${cleanFilename(data.title || 'audio')}.mp3`;
@@ -183,7 +183,7 @@ async function downloadAndSendAudio(sock, from, data, extraCaption, msg) {
 async function downloadAndSendVideo(sock, from, data, extraCaption, msg) {
     let tempFile = null;
     try {
-        const dlUrl = data.downloadUrl || data.proxyUrl;
+        const dlUrl = data.proxyUrl || data.downloadUrl;
         if (!dlUrl) throw new Error('No download URL');
 
         const filename = `${Date.now()}_${cleanFilename(data.title || 'video')}.mp4`;
@@ -258,8 +258,8 @@ commands.push({
         const query = args.join(' ');
         await react('🔍');
         try {
-            const data = await apiGet('/download/audio', { q: query });
-            if (!data.success || !data.downloadUrl) throw new Error(data.error || `No URL. Provider: ${data.provider || 'unknown'}`);
+            const data = await apiGet('/download/mp3', { q: query });
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error(data.error || `No URL. Provider: ${data.provider || 'unknown'}`);
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendAudio(sock, from, data, `🎵 YouTube Audio`, msg);
             await react('✅');
@@ -277,14 +277,14 @@ commands.push({
         await react('🔍');
         try {
             const data = await apiGet('/download/mp3', { q: query });
-            if (!data.success || !data.downloadUrl) throw new Error(data.error || `No URL. Provider: ${data.provider || 'unknown'}`);
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error(data.error || `No URL. Provider: ${data.provider || 'unknown'}`);
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendAudio(sock, from, data, `🎵 YouTube Audio (MP3)`, msg);
             await react('✅');
         } catch (e) {
             try {
                 const data = await apiGet('/api/download/youtube/mp3', { q: query });
-                if (!data.success || !data.downloadUrl) throw new Error('All failed');
+                if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('All failed');
                 await showThumbnailAndSearch(sock, from, data, msg);
                 await downloadAndSendAudio(sock, from, data, `🎵 YouTube Audio (YTA)`, msg);
                 await react('✅');
@@ -334,7 +334,7 @@ commands.push({
         try {
             const ytUrl = video.url || `https://www.youtube.com/watch?v=${video.id}`;
             const data = await apiGet('/download/audio', { url: ytUrl });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendAudio(sock, from, data, `🎵 ${video.title}`, msg);
             delete global.play3Searches[from];
@@ -352,14 +352,14 @@ commands.push({
         const query = args.join(' ');
         await react('🔍');
         try {
-            const data = await apiGet('/download/audio', { q: query });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            const data = await apiGet('/download/mp3', { q: query });
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
 
             let tempFile = null;
             try {
                 const filename = `${Date.now()}_${cleanFilename(data.title || 'audio')}.mp3`;
-                tempFile = await downloadFile(data.downloadUrl, filename);
+                tempFile = await downloadFile(data.proxyUrl || data.downloadUrl, filename);
                 const buffer = await fs.readFile(tempFile);
                 const sizeMB = (buffer.length / 1048576).toFixed(1);
 
@@ -385,7 +385,7 @@ commands.push({
         await react('🎵');
         try {
             const data = await apiGet('/download/mp3', { url });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendAudio(sock, from, data, `🎵 YouTube MP3`, msg);
             await react('✅');
@@ -403,7 +403,7 @@ commands.push({
         await react('🎵');
         try {
             const data = await apiGet('/api/download/youtube/mp3', { url });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendAudio(sock, from, data, `🎵 YouTube Audio`, msg);
             await react('✅');
@@ -425,7 +425,7 @@ commands.push({
         await react('🔍');
         try {
             const data = await apiGet('/download/mp4', { q: query });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendVideo(sock, from, data, `🎬 YouTube Video`, msg);
             await react('✅');
@@ -443,7 +443,7 @@ commands.push({
         await react('🔍');
         try {
             const data = await apiGet('/download/video', { q: query });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendVideo(sock, from, data, `🎬 Video`, msg);
             await react('✅');
@@ -461,7 +461,7 @@ commands.push({
         await react('🔍');
         try {
             const data = await apiGet('/download/hd', { q: query });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendVideo(sock, from, data, `🎬 HD Video`, msg);
             await react('✅');
@@ -512,13 +512,13 @@ commands.push({
         await react('🔍');
         try {
             const data = await apiGet('/download/mp4', { q: query });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
 
             let tempFile = null;
             try {
                 const filename = `${Date.now()}_${cleanFilename(data.title || 'video')}.mp4`;
-                tempFile = await downloadFile(data.downloadUrl, filename);
+                tempFile = await downloadFile(data.proxyUrl || data.downloadUrl, filename);
                 const buffer = await fs.readFile(tempFile);
                 const sizeMB = (buffer.length / 1048576).toFixed(1);
                 await sock.sendMessage(from, {
@@ -542,7 +542,7 @@ commands.push({
         await react('🎬');
         try {
             const data = await apiGet('/api/download/youtube/mp4', { url: args[0] });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await showThumbnailAndSearch(sock, from, data, msg);
             await downloadAndSendVideo(sock, from, data, `🎬 YouTube Video`, msg);
             await react('✅');
@@ -634,7 +634,7 @@ commands.push({
         await react('🔍');
         try {
             const data = await apiGet('/api/spotify/download', { q: args.join(' ') });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             if (data.albumArt) {
                 let caption = `╭───[ 🟢 SPOTIFY ]───\n`;
                 caption += `├ 🎵 ${data.title}\n`;
@@ -659,7 +659,7 @@ commands.push({
         await react('🟢');
         try {
             const data = await apiGet('/api/spotify/download', { url: args[0] });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             if (data.albumArt) {
                 await sock.sendMessage(from, { image: { url: data.albumArt }, caption: `🟢 ${data.title} - ${data.artist}\n⬇️ Downloading...\n\n${FOOTER}` }, { quoted: msg });
             }
@@ -681,7 +681,7 @@ commands.push({
         await react('🟢');
         try {
             const data = await apiGet('/api/spotify/download', { url: `https://open.spotify.com/track/${trackId}` });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             if (data.albumArt) {
                 await sock.sendMessage(from, { image: { url: data.albumArt }, caption: `🟢 ${data.title} - ${data.artist}\n⬇️ Downloading...\n\n${FOOTER}` }, { quoted: msg });
             }
@@ -700,14 +700,14 @@ commands.push({
         await react('🔍');
         try {
             const data = await apiGet('/api/spotify/download', { q: args.join(' ') });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             if (data.albumArt) {
                 await sock.sendMessage(from, { image: { url: data.albumArt }, caption: `📁 ${data.title} - ${data.artist}\n⬇️ Downloading...\n\n${FOOTER}` }, { quoted: msg });
             }
             let tempFile = null;
             try {
                 const filename = `${Date.now()}_${cleanFilename(data.title || 'spotify')}.mp3`;
-                tempFile = await downloadFile(data.downloadUrl, filename);
+                tempFile = await downloadFile(data.proxyUrl || data.downloadUrl, filename);
                 const buffer = await fs.readFile(tempFile);
                 const sizeMB = (buffer.length / 1048576).toFixed(1);
                 await sock.sendMessage(from, {
@@ -1167,7 +1167,7 @@ commands.push({
         await react('📘');
         try {
             const data = await apiGet('/api/download/facebook/snap', { url: args[0] });
-            if (!data.success || !data.downloadUrl) throw new Error('No URL');
+            if (!data.success || !(data.proxyUrl || data.downloadUrl)) throw new Error('No URL');
             await downloadAndSendVideo(sock, from, data, `📘 FB Snap`, msg);
             await react('✅');
         } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *Failed*\n\n${FOOTER}`, msg); }
@@ -1274,7 +1274,7 @@ commands.push({
                 audioUrl = args[0];
             } else if (hasAudio) {
                 const targetMsg = quoted?.message?.audioMessage || quoted?.message?.videoMessage ? { key: quoted.key, message: quoted.message } : msg;
-                const buffer = await require('gifted-baileys').downloadMediaMessage(targetMsg, 'buffer', {}, { logger: console });
+                const buffer = await require('megan-baileys').downloadMediaMessage(targetMsg, 'buffer', {}, { logger: console });
                 const { uploadAuto } = require('../../megan/lib/upload');
                 const { url } = await uploadAuto(buffer, `shazam_${Date.now()}.mp3`);
                 audioUrl = url;

@@ -1,5 +1,5 @@
 // Megan-Prime Anti-Link - Clean version (silent terminal)
-const { isJidGroup } = require('gifted-baileys');
+const { isJidGroup } = require('megan-baileys');
 
 const isAnyLink = (text) => {
     if (!text || typeof text !== 'string') return false;

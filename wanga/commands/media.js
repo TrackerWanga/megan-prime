@@ -6,14 +6,14 @@ const fs = require('fs-extra');
 const path = require('path');
 const config = require('../../megan/config');
 const { sendButtons } = require('gifted-btns');
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
 const MediaProcessor = require('../../megan/lib/mediaProcessor');
 const { uploadAuto } = require('../../megan/lib/upload');
 
 const commands = [];
 
-const API_BASE = 'https://apis.megan.qzz.io';
-const API_KEY = 'megan_admin_master';
+const API_BASE = require('../../megan/lib/developer').API_BASE;
+const API_KEY = require('../../megan/lib/developer').API_KEY;
 const CHANNEL_LINK = 'https://whatsapp.com/channel/0029Vb7FYNA8qIzs2P5dcE37';
 const TEMP_DIR = path.join(__dirname, '../../temp');
 const FOOTER = '> Megan-Prime | TrackerWanga';

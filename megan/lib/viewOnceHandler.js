@@ -1,5 +1,5 @@
 // Megan-Prime View Once Handler - Downloads ALL incoming media immediately
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
 const fs = require('fs-extra');
 const path = require('path');
 const Uploader = require('./upload');

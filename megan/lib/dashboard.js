@@ -4,8 +4,8 @@ const path = require('path');
 const axios = require('axios');
 const moment = require('moment-timezone');
 
-const API_BASE = 'https://apis.megan.qzz.io';
-const API_KEY = 'megan_admin_master';
+const API_BASE = require('./developer').API_BASE;
+const API_KEY = require('./developer').API_KEY;
 
 class Dashboard {
     constructor(bot) {

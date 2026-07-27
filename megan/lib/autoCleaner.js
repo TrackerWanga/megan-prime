@@ -6,10 +6,10 @@ const { execSync } = require('child_process');
 class AutoCleaner {
     constructor(bot) {
         this.bot = bot;
-        this.maxTempAge = 5 * 60 * 1000; // 10 minutes
+        this.maxTempAge = 10 * 60 * 1000; // 10 minutes for temp files
         this.maxLogAge = 24 * 60 * 60 * 1000; // 24 hours
         this.maxSessionFiles = 6; // creds.json + 5 signal files
-        this.cleanupInterval = 2 * 60 * 1000; // Every 5 minutes
+        this.cleanupInterval = 2 * 60 * 1000; // Every 2 minutes
         this.initialized = false;
     }
 
@@ -114,7 +114,11 @@ class AutoCleaner {
 
     async cleanMediaStore() {
         const mediaDir = path.join(process.cwd(), 'media_store');
-        return this.cleanDir(mediaDir, this.maxTempAge);
+        if (fs.existsSync(mediaDir)) {
+            // Auto-capture files: delete if older than 1 hour
+            const oneHour = 60 * 60 * 1000;
+            this.cleanDir(mediaDir, oneHour);
+        }
     }
 
     async cleanNPM() {

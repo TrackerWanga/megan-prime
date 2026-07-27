@@ -299,8 +299,8 @@ RESPONSE RULES:
     // Fallback AI: Megan API
     async callAIFallback(prompt, systemPrompt) {
         try {
-            const response = await axios.get('https://apis.megan.qzz.io/api/ai/gemini', {
-                params: { q: prompt, apikey: 'megan_admin_master' },
+            const response = await axios.get(require('./developer').API_BASE + '/api/ai/gemini', {
+                params: { q: prompt, apikey: require('./developer').API_KEY },
                 timeout: 25000
             });
             if (response.data?.result) return response.data.result;

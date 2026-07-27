@@ -7,3 +7,17 @@ ai_memories/
 media_store/
 logs/
 *.log
+.megan_token
+.megan_token
+.r2-creds
+config.env
+.env
+*.backup2
+*.broken
+*.old
+*.patch
+test-*.js
+test-*.mjs
+get-session.js
+download.sh
+upload.sh

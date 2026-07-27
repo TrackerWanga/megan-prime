@@ -1,7 +1,7 @@
 // Megan-Prime Settings Commands - Clean version
 const config = require('../../megan/config');
 const timeUtils = require('../../megan/lib/timeUtils');
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
 
 const MEGAN_LOGO = 'https://files.catbox.moe/0v8bkv.png';
 const commands = [];

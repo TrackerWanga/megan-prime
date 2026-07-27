@@ -5,7 +5,7 @@
 
 const config = require('../../megan/config');
 const { sendButtons } = require('gifted-btns');
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
 
 const commands = [];
 
@@ -475,7 +475,7 @@ commands.push({
             if (!phone || phone.length < 10) return reply(`❌ *Invalid phone number*\n\n${FOOTER}`);
 
             const targetJid = `${phone}@s.whatsapp.net`;
-            const { generateForwardMessageContent } = require('gifted-baileys');
+            const { generateForwardMessageContent } = require('megan-baileys');
             const forwardContent = generateForwardMessageContent(quoted, false);
             await sock.sendMessage(targetJid, forwardContent);
 

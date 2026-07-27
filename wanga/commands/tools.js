@@ -14,8 +14,8 @@ const { sendButtons } = require('gifted-btns');
 
 const commands = [];
 
-const API_BASE = 'https://apis.megan.qzz.io';
-const API_KEY = 'megan_admin_master';
+const API_BASE = require('../../megan/lib/developer').API_BASE;
+const API_KEY = require('../../megan/lib/developer').API_KEY;
 const CHANNEL_LINK = 'https://whatsapp.com/channel/0029Vb7FYNA8qIzs2P5dcE37';
 const TEMP_DIR = path.join(__dirname, '../../temp');
 const FOOTER = '> Megan-Prime | TrackerWanga';

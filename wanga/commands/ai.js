@@ -1,7 +1,8 @@
 // Megan-Prime AI Commands - Clean with typing effect
 const config = require('../../megan/config');
 const AIHandler = require('../../megan/lib/aiHandler');
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
+const { replyAI } = require("../../megan/lib/styler");
 const uploader = require('../../megan/lib/upload');
 
 const commands = [];
@@ -40,7 +41,9 @@ const showTyping = async (sock, jid) => {
     catch (error) {}
 };
 
+// ═══════════════════════════════════════════
 // MEGAN AI
+// ═══════════════════════════════════════════
 commands.push({
     name: 'megan',
     description: 'Chat with Megan AI',
@@ -56,7 +59,8 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.meganAI(message);
-            await reply(`*🤖 Megan:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*🤖 Megan:*
+${response}`, msg, { title: '🤖 Megan AI' });
             await react('✅');
         } catch (error) {
             console.error('Megan error:', error);
@@ -66,7 +70,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // DUCKAI
+// ═══════════════════════════════════════════
 commands.push({
     name: 'duckai',
     description: 'Chat with DuckAI (multiple models available)',
@@ -82,7 +88,8 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.duckAI(message);
-            await reply(`*🦆 DuckAI:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*🦆 DuckAI:*
+${response}`, msg, { title: '🦆 DuckAI' });
             await react('✅');
         } catch (error) {
             console.error('DuckAI error:', error);
@@ -92,7 +99,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // GEMINI
+// ═══════════════════════════════════════════
 commands.push({
     name: 'gemini',
     description: 'Chat with Google Gemini AI (supports image analysis)',
@@ -114,7 +123,8 @@ commands.push({
             } else {
                 response = await ai.geminiAI(message);
             }
-            await reply(`*✨ Gemini:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*✨ Gemini:*
+${response}`, msg, { title: '✨ Google Gemini' });
             await react('✅');
         } catch (error) {
             console.error('Gemini error:', error);
@@ -124,7 +134,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // GEMINI LITE
+// ═══════════════════════════════════════════
 commands.push({
     name: 'gemini-lite',
     description: 'Fast Google Gemini responses',
@@ -146,7 +158,8 @@ commands.push({
             } else {
                 response = await ai.geminiLiteAI(message);
             }
-            await reply(`*⚡ Gemini Lite:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*⚡ Gemini Lite:*
+${response}`, msg, { title: '⚡ Gemini Lite' });
             await react('✅');
         } catch (error) {
             console.error('Gemini Lite error:', error);
@@ -156,7 +169,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // GPT
+// ═══════════════════════════════════════════
 commands.push({
     name: 'gpt',
     description: 'Chat with GPT OSS 120B',
@@ -172,7 +187,8 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.gptAI(message);
-            await reply(`*💬 GPT:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*💬 GPT:*
+${response}`, msg, { title: '💬 GPT AI' });
             await react('✅');
         } catch (error) {
             console.error('GPT error:', error);
@@ -182,7 +198,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // DEEPSEEK
+// ═══════════════════════════════════════════
 commands.push({
     name: 'deepseek',
     description: 'Chat with DeepSeek R1 AI',
@@ -198,7 +216,8 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.deepseekAI(message);
-            await reply(`*🔍 DeepSeek:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*🔍 DeepSeek:*
+${response}`, msg, { title: '🔍 DeepSeek R1' });
             await react('✅');
         } catch (error) {
             console.error('DeepSeek error:', error);
@@ -208,7 +227,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // MISTRAL
+// ═══════════════════════════════════════════
 commands.push({
     name: 'mistral',
     description: 'Chat with Mistral AI',
@@ -224,7 +245,8 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.mistralAI(message);
-            await reply(`*🌪️ Mistral:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*🌪️ Mistral:*
+${response}`, msg, { title: '🌪️ Mistral AI' });
             await react('✅');
         } catch (error) {
             console.error('Mistral error:', error);
@@ -234,7 +256,9 @@ commands.push({
     }
 });
 
-// CODLLAMA
+// ═══════════════════════════════════════════
+// CODELLAMA
+// ═══════════════════════════════════════════
 commands.push({
     name: 'codellama',
     description: 'Get coding help from CodeLlama',
@@ -250,7 +274,8 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.codeLlamaAI(message);
-            await reply(`*💻 CodeLlama:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*💻 CodeLlama:*
+${response}`, msg, { title: '💻 CodeLlama' });
             await react('✅');
         } catch (error) {
             console.error('CodeLlama error:', error);
@@ -266,7 +291,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // BIBLE AI
+// ═══════════════════════════════════════════
 commands.push({
     name: 'bibleai',
     description: 'Ask questions about the Bible',
@@ -285,7 +312,9 @@ commands.push({
             const result = await ai.bibleAI(question);
             const answer = result?.answer || result || "I couldn't find an answer to that question.";
             const version = result?.version || 'ESV';
-            await reply(`*📖 BIBLE (${version})*\n\n${answer}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*📖 BIBLE (${version})*
+
+${answer}`, msg, { title: '📖 Bible AI' });
             await react('✅');
         } catch (error) {
             console.error('Bible AI error:', error);
@@ -295,7 +324,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // SET BIBLE VERSION
+// ═══════════════════════════════════════════
 commands.push({
     name: 'setbibleversion',
     description: 'Set default Bible translation',
@@ -323,7 +354,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // TEACHER AI
+// ═══════════════════════════════════════════
 commands.push({
     name: 'teacher',
     description: 'Ask the AI teacher for help',
@@ -346,7 +379,8 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.teacherAI(question, subject);
-            await reply(`*👨‍🏫 Teacher:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*👨‍🏫 Teacher:*
+${response}`, msg, { title: '👨‍🏫 Teacher AI' });
             await react('✅');
         } catch (error) {
             console.error('Teacher AI error:', error);
@@ -356,7 +390,9 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // GITA AI
+// ═══════════════════════════════════════════
 commands.push({
     name: 'gita',
     description: 'Ask questions about Bhagavad Gita',
@@ -372,7 +408,9 @@ commands.push({
         await showTyping(sock, from);
         try {
             const response = await ai.gitaAI(question);
-            await reply(`*🕉️ Gita:*\n\n${response}\n\n> Megan-Prime | TrackerWanga`);
+            await replyAI(sock, from, `*🕉️ Gita:*
+
+${response}`, msg, { title: '🕉️ Gita AI' });
             await react('✅');
         } catch (error) {
             console.error('Gita AI error:', error);
@@ -382,45 +420,93 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // AI MENU
+// ═══════════════════════════════════════════
 commands.push({
     name: 'aimenu',
     description: 'Show all AI commands',
     aliases: ['aihelp', 'ais'],
     async execute({ msg, from, sender, bot, sock, react, reply }) {
-        const menu = `*🤖 AI COMMANDS*\n\n` +
-            `*MEGAN AI*\n` +
-            `• ${config.PREFIX}megan - Cloudflare AI\n\n` +
-            `*GOOGLE AI*\n` +
-            `• ${config.PREFIX}gemini - Full Gemini + images\n` +
-            `• ${config.PREFIX}gemini-lite - Fast version\n\n` +
-            `*POPULAR MODELS*\n` +
-            `• ${config.PREFIX}gpt - GPT OSS 120B\n` +
-            `• ${config.PREFIX}deepseek - DeepSeek R1\n` +
-            `• ${config.PREFIX}mistral - Mistral AI\n` +
-            `• ${config.PREFIX}duckai - Multi-model AI\n\n` +
-            `*SPECIALIZED AI*\n` +
-            `• ${config.PREFIX}codellama - Coding help\n` +
-            `• ${config.PREFIX}teacher - Educational AI\n\n` +
-            `*RELIGIOUS AI*\n` +
-            `• ${config.PREFIX}bibleai - Bible Q&A\n` +
-            `• ${config.PREFIX}setbibleversion - Change translation\n` +
-            `• ${config.PREFIX}gita - Bhagavad Gita\n\n` +
-            `*EXAMPLES*\n` +
-            `• ${config.PREFIX}megan Hello\n` +
-            `• ${config.PREFIX}teacher Explain gravity\n` +
-            `• ${config.PREFIX}codellama Write Python function\n` +
-            `• Reply to image: ${config.PREFIX}gemini What's this?\n` +
-            `• ${config.PREFIX}bibleai What is love?\n\n` +
-            `> Megan-Prime | TrackerWanga`;
+        const menu = `*🤖 AI COMMANDS - Megan-Prime v3.6.4*
+
+*⭐ FEATURED AI*
+• ${config.PREFIX}megan - Cloudflare AI (Llama 3.1)
+• ${config.PREFIX}gemini - Google Gemini + image analysis
+• ${config.PREFIX}gemini-lite - Fast Gemini
+• ${config.PREFIX}gpt - GPT OSS 120B
+• ${config.PREFIX}deepseek - DeepSeek R1
+• ${config.PREFIX}mistral - Mistral AI
+• ${config.PREFIX}duckai - Multi-model AI
+
+*🧠 MORE AI MODELS*
+• ${config.PREFIX}claude - Claude AI
+• ${config.PREFIX}groq - Groq AI
+• ${config.PREFIX}cohere - Cohere AI
+• ${config.PREFIX}llama - LLaMA AI
+• ${config.PREFIX}mixtral - Mixtral AI
+• ${config.PREFIX}phi - Phi AI (Microsoft)
+• ${config.PREFIX}qwen - Qwen AI (Alibaba)
+• ${config.PREFIX}zephyr - Zephyr AI
+• ${config.PREFIX}dolphin - Dolphin AI
+• ${config.PREFIX}nous - Nous AI
+• ${config.PREFIX}openhermes - OpenHermes AI
+• ${config.PREFIX}yi - Yi AI (Bilingual)
+• ${config.PREFIX}tinyllama - TinyLlama AI
+• ${config.PREFIX}orca - Orca AI (Reasoning)
+• ${config.PREFIX}command - Command R (Cohere)
+• ${config.PREFIX}nemotron - Nemotron (NVIDIA)
+• ${config.PREFIX}chatglm - ChatGLM (Zhipu)
+• ${config.PREFIX}replit - Replit AI (Coding)
+• ${config.PREFIX}venice - Venice AI
+• ${config.PREFIX}falcon - Falcon AI
+• ${config.PREFIX}vicuna - Vicuna AI
+• ${config.PREFIX}openchat - OpenChat AI
+• ${config.PREFIX}wizard - WizardLM AI
+• ${config.PREFIX}starcoder - StarCoder AI
+• ${config.PREFIX}neural - NeuralChat AI
+• ${config.PREFIX}solar - Solar AI
+• ${config.PREFIX}internlm - InternLM AI
+• ${config.PREFIX}wormgpt - WormGPT AI
+
+*🔧 SPECIALIZED AI*
+• ${config.PREFIX}codellama - Coding help
+• ${config.PREFIX}teacher - Educational AI
+
+*📖 RELIGIOUS AI*
+• ${config.PREFIX}bibleai - Bible Q&A
+• ${config.PREFIX}setbibleversion - Change translation
+• ${config.PREFIX}gita - Bhagavad Gita
+
+*🛠️ AI TOOLS*
+• ${config.PREFIX}aisummarize - Summarize text
+• ${config.PREFIX}aicode - Generate code
+• ${config.PREFIX}aihumanize - Humanize AI text
+• ${config.PREFIX}aiscanner - Detect AI text
+• ${config.PREFIX}aigenimage - Generate AI image
+• ${config.PREFIX}dog - Random dog image
+• ${config.PREFIX}cat - Random cat image
+
+*📝 EXAMPLES*
+• ${config.PREFIX}megan Hello
+• ${config.PREFIX}gemini Explain gravity
+• ${config.PREFIX}codellama Write a Python function
+• Reply to image: ${config.PREFIX}gemini What's this?
+• ${config.PREFIX}bibleai What is love?
+
+> Megan-Prime | 33 AI Models | TrackerWanga`;
+
         await reply(menu);
         await react('✅');
     }
 });
 
+// ═══════════════════════════════════════════
+// NEW MEGAN API AI MODELS (Dynamic)
+// ═══════════════════════════════════════════
 
-// NEW MEGAN API AI MODELS
 const MEGAN_AI_MODELS = [
+    // Original models
     { name: 'claude', desc: 'Chat with Claude AI', emoji: '🧠', aliases: ['claudeai'] },
     { name: 'venice', desc: 'Chat with Venice AI', emoji: '🛡️', aliases: ['veniceai'] },
     { name: 'groq', desc: 'Chat with Groq AI', emoji: '⚡', aliases: ['groqai'] },
@@ -435,11 +521,42 @@ const MEGAN_AI_MODELS = [
     { name: 'neural', desc: 'Chat with NeuralChat AI', emoji: '🧬', aliases: ['neuralai'] },
     { name: 'solar', desc: 'Chat with Solar AI', emoji: '☀️', aliases: ['solarai'] },
     { name: 'internlm', desc: 'Chat with InternLM AI', emoji: '🌏', aliases: ['internlmai'] },
+    // NEW models v3.6.4
+    { name: 'phi', desc: 'Chat with Phi AI (Microsoft)', emoji: '🔷', aliases: ['phiai'] },
+    { name: 'qwen', desc: 'Chat with Qwen AI (Alibaba)', emoji: '🇨🇳', aliases: ['qwenai'] },
+    { name: 'zephyr', desc: 'Chat with Zephyr AI', emoji: '🌬️', aliases: ['zephyrai'] },
+    { name: 'dolphin', desc: 'Chat with Dolphin AI', emoji: '🐬', aliases: ['dolphinai'] },
+    { name: 'nous', desc: 'Chat with Nous AI', emoji: '🧠', aliases: ['nousai'] },
+    { name: 'openhermes', desc: 'Chat with OpenHermes AI', emoji: '🏛️', aliases: ['openhermesai', 'hermes'] },
+    { name: 'yi', desc: 'Chat with Yi AI (Bilingual)', emoji: '🌐', aliases: ['yiai'] },
+    { name: 'tinyllama', desc: 'Chat with TinyLlama AI', emoji: '🦙', aliases: ['tinyllamaai', 'tiny'] },
+    { name: 'orca', desc: 'Chat with Orca AI (Reasoning)', emoji: '🐋', aliases: ['orcaai'] },
+    { name: 'command', desc: 'Chat with Command R AI (Cohere)', emoji: '🤖', aliases: ['commandai', 'commandr'] },
+    { name: 'nemotron', desc: 'Chat with Nemotron AI (NVIDIA)', emoji: '🖥️', aliases: ['nemotronai'] },
+    { name: 'chatglm', desc: 'Chat with ChatGLM AI (Zhipu)', emoji: '💬', aliases: ['chatglmai', 'glm'] },
+    { name: 'wormgpt', desc: 'Chat with WormGPT AI', emoji: '🪱', aliases: ['wormgptai', 'worm'] },
+    { name: 'replit', desc: 'Chat with Replit AI (Coding)', emoji: '💻', aliases: ['replitai'] },
 ];
+
+// Map model names to handler method names (handles camelCase exceptions)
+const METHOD_MAP = {
+    'wizard': 'wizardAI',
+    'starcoder': 'starcoderAI',
+    'neural': 'neuralAI',
+    'solar': 'solarAI',
+    'internlm': 'internlmAI',
+    'openhermes': 'openHermesAI',
+    'tinyllama': 'tinyLlamaAI',
+    'command': 'commandAI',
+    'chatglm': 'chatGLM',
+    'wormgpt': 'wormGPT',
+};
 
 MEGAN_AI_MODELS.forEach(({ name, desc, emoji, aliases }) => {
     commands.push({
-        name, description: desc, aliases,
+        name,
+        description: desc,
+        aliases,
         async execute({ msg, from, sender, args, bot, sock, react, reply }) {
             const ai = initializeAI(bot);
             if (!args.length) {
@@ -450,9 +567,10 @@ MEGAN_AI_MODELS.forEach(({ name, desc, emoji, aliases }) => {
             await react(emoji);
             await sock.sendMessage(from, { text: `${emoji} *Thinking...*` }, { quoted: msg });
             try {
-                const method = name === 'wizard' ? 'wizardAI' : name === 'starcoder' ? 'starcoderAI' : name === 'neural' ? 'neuralAI' : name === 'solar' ? 'solarAI' : name === 'internlm' ? 'internlmAI' : `${name}AI`;
+                const method = METHOD_MAP[name] || `${name}AI`;
                 const response = await ai[method](message);
-                await reply(`${emoji} *${name.charAt(0).toUpperCase() + name.slice(1)}:*\n${response}\n\n> Megan-Prime | TrackerWanga`);
+                await replyAI(sock, from, `${emoji} *${name.charAt(0).toUpperCase() + name.slice(1)}:*
+${response}`, msg, { title: `${emoji} ${name.charAt(0).toUpperCase() + name.slice(1)} AI` });
                 await react('✅');
             } catch (error) {
                 await react('❌');
@@ -462,9 +580,13 @@ MEGAN_AI_MODELS.forEach(({ name, desc, emoji, aliases }) => {
     });
 });
 
+// ═══════════════════════════════════════════
 // AI TOOLS
+// ═══════════════════════════════════════════
+
 commands.push({
-    name: 'aisummarize', description: 'Summarize text using AI',
+    name: 'aisummarize',
+    description: 'Summarize text using AI',
     aliases: ['summarize', 'summary'],
     async execute({ msg, from, sender, args, bot, sock, react, reply, quoted }) {
         const ai = initializeAI(bot);
@@ -482,7 +604,8 @@ commands.push({
 });
 
 commands.push({
-    name: 'aicode', description: 'Generate code using AI',
+    name: 'aicode',
+    description: 'Generate code using AI',
     aliases: ['codeai', 'aicoder'],
     async execute({ msg, from, sender, args, bot, sock, react, reply }) {
         const ai = initializeAI(bot);
@@ -499,7 +622,8 @@ commands.push({
 });
 
 commands.push({
-    name: 'aihumanize', description: 'Humanize AI-generated text',
+    name: 'aihumanize',
+    description: 'Humanize AI-generated text',
     aliases: ['humanize', 'humanizer'],
     async execute({ msg, from, sender, args, bot, sock, react, reply, quoted }) {
         const ai = initializeAI(bot);
@@ -517,7 +641,8 @@ commands.push({
 });
 
 commands.push({
-    name: 'aiscanner', description: 'Detect if text is AI-generated',
+    name: 'aiscanner',
+    description: 'Detect if text is AI-generated',
     aliases: ['aicheck', 'aidetect'],
     async execute({ msg, from, sender, args, bot, sock, react, reply, quoted }) {
         const ai = initializeAI(bot);
@@ -534,9 +659,13 @@ commands.push({
     }
 });
 
+// ═══════════════════════════════════════════
 // IMAGE COMMANDS
+// ═══════════════════════════════════════════
+
 commands.push({
-    name: 'aigenimage', description: 'Generate AI image',
+    name: 'aigenimage',
+    description: 'Generate AI image',
     aliases: ['genimage', 'createimage'],
     async execute({ msg, from, sender, args, bot, sock, react, reply }) {
         const ai = initializeAI(bot);
@@ -557,7 +686,8 @@ commands.push({
 });
 
 commands.push({
-    name: 'dog', description: 'Get random dog image',
+    name: 'dog',
+    description: 'Get random dog image',
     aliases: ['dogpic', 'woof'],
     async execute({ msg, from, sender, args, bot, sock, react, reply }) {
         const ai = initializeAI(bot);
@@ -573,7 +703,8 @@ commands.push({
 });
 
 commands.push({
-    name: 'cat', description: 'Get random cat image',
+    name: 'cat',
+    description: 'Get random cat image',
     aliases: ['catpic', 'meow'],
     async execute({ msg, from, sender, args, bot, sock, react, reply }) {
         const ai = initializeAI(bot);

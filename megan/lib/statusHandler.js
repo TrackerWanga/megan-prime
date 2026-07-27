@@ -1,5 +1,5 @@
 // Megan-Prime Status Handler - WITH LID RESOLUTION
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
 const config = require('../config');
 const fs = require('fs-extra');
 const path = require('path');

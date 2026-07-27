@@ -1,7 +1,7 @@
 // Megan-Prime View Once Reveal Command
 const fs = require('fs-extra');
 const path = require('path');
-const { downloadMediaMessage } = require('gifted-baileys');
+const { downloadMediaMessage } = require('megan-baileys');
 const { uploadAuto } = require('../../megan/lib/upload');
 const commands = [];
 

@@ -1,5 +1,5 @@
 // Megan-Prime Connection Manager
-const { DisconnectReason } = require('gifted-baileys');
+const { DisconnectReason } = require('megan-baileys');
 const { Boom } = require('@hapi/boom');
 const config = require('../config');
 
@@ -17,24 +17,43 @@ class ConnectionManager {
 
     handleUpdate(update, sock) {
         const { connection, lastDisconnect } = update;
+        
         if (connection === 'connecting') {
             this.logger.connection('Connecting to WhatsApp...');
         }
+        
         if (connection === 'open') {
             this.isConnected = true;
             this.reconnectAttempts = 0;
             this.logger.success('Connected successfully!');
+            return;
         }
+        
         if (connection === 'close') {
             this.isConnected = false;
             let statusCode = 500;
             if (lastDisconnect?.error instanceof Boom) {
                 statusCode = lastDisconnect.error.output?.statusCode;
             }
+            
+            console.log(`   📴 Connection closed (status: ${statusCode})`);
+            
             if (statusCode === DisconnectReason.loggedOut) {
-                this.logger.error('Session expired! Please get a new session.');
+                this.logger.error('Session expired! Get a new session from MEGAN MD.');
                 process.exit(1);
             }
+            
+            // Don't reconnect for certain status codes
+            if (statusCode === 401) {
+                this.logger.error('Auth failed (401). Session may be invalid.');
+                process.exit(1);
+            }
+            
+            if (statusCode === 403) {
+                this.logger.error('Access denied (403). Bot may be banned.');
+                process.exit(1);
+            }
+            
             this.scheduleReconnect();
         }
     }
@@ -47,11 +66,15 @@ class ConnectionManager {
                 30000
             );
         }
+        
+        this.reconnectAttempts++;
+        
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             this.logger.error('Max reconnection attempts reached. Exiting...');
             process.exit(1);
         }
-        this.reconnectAttempts++;
+        
+        console.log(`   🔄 Reconnecting in ${delay/1000}s (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
         setTimeout(() => this.bot.connect(), delay);
     }
 

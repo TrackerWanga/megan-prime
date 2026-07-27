@@ -44,7 +44,7 @@ async function getQuotedImage(msg, sock) {
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (!quoted) return null;
         if (quoted.imageMessage) {
-            const buffer = await require('gifted-baileys').downloadMediaMessage(
+            const buffer = await require('megan-baileys').downloadMediaMessage(
                 { key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId }, message: quoted },
                 'buffer', {}, { logger: console }
             );

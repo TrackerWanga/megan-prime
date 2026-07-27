@@ -1,901 +1,632 @@
 // ╔══════════════════════════════════════════════════╗
-// ║   MEGAN-PRIME MOVIE COMMANDS - 26 Commands      ║
-// ║  Powered by Megan Movie API | Tracker Wanga      ║
+// ║   MEGAN-PRIME MOVIE DB - TMDB Full Integration ║
+// ║  Powered by Megan APIs v3.6.4 | Tracker Wanga   ║
 // ╚══════════════════════════════════════════════════╝
 
 const axios = require('axios');
-const fs = require('fs-extra');
-const path = require('path');
 const config = require('../../megan/config');
-const { sendButtons, sendInteractiveMessage } = require('gifted-btns');
+
+const API_BASE = require('../../megan/lib/developer').API_BASE;
+const API_KEY = require('../../megan/lib/developer').API_KEY;
+const FOOTER = '> Megan-Prime | TMDB | TrackerWanga';
 
 const commands = [];
 
-const MOVIE_API = 'https://movieapi.megan.qzz.io/api';
-const CHANNEL_LINK = 'https://whatsapp.com/channel/0029Vb7FYNA8qIzs2P5dcE37';
-const TEMP_DIR = path.join(__dirname, '../../temp');
-const FOOTER = '> Megan-Prime | TrackerWanga';
-
-fs.ensureDirSync(TEMP_DIR);
-
-// Clean temp after each download
-async function cleanTemp() {
-    try {
-        const files = await fs.readdir(TEMP_DIR);
-        for (const f of files) {
-            if (f.startsWith('movie_') || f.startsWith('series_')) {
-                await fs.unlink(path.join(TEMP_DIR, f)).catch(() => {});
-            }
-        }
-    } catch(e) {}
-}
-
-// ═══════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════
-
-async function movieApi(endpoint, params = {}) {
-    const url = `${MOVIE_API}${endpoint}`;
-    // Warm-up + retry
-    try { await axios.get(`${MOVIE_API}/`, { timeout: 10000 }).catch(()=>{}); } catch(e) {}
-    for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-            const res = await axios.get(url, { 
-                params, 
-                timeout: 30000 + (attempt * 15000),
-                headers: { 'User-Agent': 'Megan-Prime/1.0' } 
-            });
-            return res.data;
-        } catch (e) {
-            if (attempt < 3 && (e.code === 'ECONNRESET' || e.code === 'ETIMEDOUT' || e.response?.status >= 500)) {
-                await new Promise(r => setTimeout(r, attempt * 3000));
-                continue;
-            }
-            throw e;
-        }
-    }
-}
-
-async function sendButtonsMsg(sock, from, text, quoted, extraButtons = []) {
-    const buttons = [...extraButtons, { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: '📢 Channel', url: CHANNEL_LINK }) }];
-    try {
-        await sendButtons(sock, from, { title: 'Megan-Prime', text, footer: FOOTER, buttons }, { quoted });
-    } catch (e) {
-        await sock.sendMessage(from, { text }, { quoted });
-    }
-}
-
-async function downloadFile(url, filename) {
-    const filePath = path.join(TEMP_DIR, filename);
-    const res = await axios({ method: 'GET', url, responseType: 'stream', headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 600000 });
-    return new Promise((resolve, reject) => {
-        const writer = fs.createWriteStream(filePath);
-        res.data.pipe(writer);
-        writer.on('finish', () => resolve(filePath));
-        writer.on('error', reject);
+async function apiGet(endpoint, params = {}, timeout = 30000) {
+    const url = `${API_BASE}${endpoint}`;
+    const res = await axios.get(url, {
+        params: { ...params, apikey: API_KEY },
+        timeout,
+        headers: { 'User-Agent': 'Megan-Prime/1.0' }
     });
+    return res.data;
 }
 
-function getPoster(item) {
-    if (typeof item.poster === 'string') return item.poster;
-    if (item.poster?.url) return item.poster.url;
-    if (item.image?.url) return item.image.url;
-    if (item.cover?.url) return item.cover.url;
-    return '';
+function getPoster(m) { return m.poster || m.posterPath || null; }
+function getBackdrop(m) { return m.backdrop || m.backdropPath || null; }
+function safeRating(m) { const r = m.rating || m.voteAverage; return r ? (typeof r === 'number' ? r.toFixed(1) : r) : 'N/A'; }
+
+function movieToText(m) {
+    let t = '';
+    t += `🎬 *${m.title || m.name}*`;
+    if (m.tagline) t += `\n_"${m.tagline}"_`;
+    t += `\n⭐ ${safeRating(m)}/10`;
+    if (m.runtime) t += ` | ⏱️ ${m.runtime}min`;
+    if (m.releaseDate) t += `\n📅 ${m.releaseDate}`;
+    if (m.genres?.length) t += `\n🎭 ${m.genres.join(', ')}`;
+    if (m.overview) t += `\n\n📝 ${m.overview.substring(0, 400)}`;
+    if (m.budget) t += `\n💰 Budget: $${(m.budget/1000000).toFixed(0)}M`;
+    if (m.revenue) t += `\n📊 Revenue: $${(m.revenue/1000000).toFixed(0)}M`;
+    if (m.homepage) t += `\n🔗 ${m.homepage}`;
+    if (m.imdbId) t += `\n🎯 IMDb: https://imdb.com/title/${m.imdbId}`;
+    return t;
 }
 
-function getBackdrop(item) {
-    if (typeof item.backdrop === 'string') return item.backdrop;
-    if (item.backdrop?.url) return item.backdrop.url;
-    return '';
+function tvToText(s) {
+    let t = `📺 *${s.name || s.title}*`;
+    if (s.tagline) t += `\n_"${s.tagline}"_`;
+    t += `\n⭐ ${safeRating(s)}/10`;
+    if (s.episodeRunTime?.length) t += ` | ⏱️ ${s.episodeRunTime[0]}min/ep`;
+    if (s.firstAirDate) t += `\n📅 First aired: ${s.firstAirDate}`;
+    if (s.lastAirDate) t += ` | Last: ${s.lastAirDate}`;
+    if (s.genres?.length) t += `\n🎭 ${s.genres.join(', ')}`;
+    if (s.numberOfSeasons) t += `\n📂 ${s.numberOfSeasons} seasons | ${s.numberOfEpisodes || '?'} episodes`;
+    if (s.overview) t += `\n\n📝 ${s.overview.substring(0, 400)}`;
+    if (s.status) t += `\n📊 Status: ${s.status}`;
+    if (s.networks?.length) t += `\n📡 ${s.networks.map(n=>n.name||n).join(', ')}`;
+    if (s.homepage) t += `\n🔗 ${s.homepage}`;
+    return t;
 }
-
-function formatSize(mb) {
-    if (!mb) return 'N/A';
-    if (mb >= 1000) return (mb / 1000).toFixed(1) + ' GB';
-    return mb + ' MB';
-}
-
-function cleanFileName(name) {
-    return (name || 'download').replace(/[<>:"/\\|?*]/g, '').substring(0, 80);
-}
-
-// Store search results per chat
-if (!global.movieSearches) global.movieSearches = {};
 
 // ═══════════════════════════════════════════
-// SEARCH COMMANDS
-// ═══════════════════════════════════════════
-
 // 1. MOVIE SEARCH
-commands.push({
-    name: 'moviesearch', description: 'Search for movies',
-    aliases: ['searchmovie', 'findmovie'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`🎬 *MOVIE SEARCH*\n\nUsage: ${config.PREFIX}moviesearch <title>\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
+// ═══════════════════════════════════════════
+commands.push({ name: 'movie', description: 'Search for a movie on TMDB', aliases: ['moviesearch', 'findmovie', 'tmdb'],
+    async execute({ msg, from, args, sock, react, reply }) {
+        if (!args.length) return reply(`🎬 *MOVIE SEARCH*\n\n*Usage:* ${config.PREFIX}movie <title>\n*Example:* ${config.PREFIX}movie Inception\n\n${FOOTER}`);
+        await react('🎬');
         try {
-            const data = await movieApi('/search/movies', { q: query, limit: 10 });
-            const results = data.results || data.data?.results || [];
-            if (!results.length) throw new Error('No movies found');
-
-            global.movieSearches[from] = { results, timestamp: Date.now(), type: 'movie' };
-
-            // Build single_select catalog
-            const rows = results.slice(0, 5).map((m, i) => ({
-                header: `⭐ ${m.rating || 'N/A'} | ${m.year || 'N/A'}`,
-                title: `${i+1}. ${(m.title || m.name).substring(0, 50)}`,
-                description: (m.genres || []).join(', ') || 'Movie',
-                id: `moviepick_${m.subject_id || m.detail_path || i}`
-            }));
-
-            const text = `╭───[ 🎬 MOVIES: "${query}" ]───\n│ Pick a movie below to see details\n╰───◇\n${FOOTER}`;
-
-            // Show first result poster
-            const first = results[0];
-            const poster = getPoster(first);
-            // Send poster with caption
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-            }
-            // Send catalog picker
-            try {
-                await sendInteractiveMessage(sock, from, {
-                    text: `🎬 *Results for "${query}"*\nPick a movie:`,
-                    footer: 'Megan Movie API',
-                    interactiveButtons: [{
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: 'Movies Found',
-                            sections: [{ title: 'Results', rows }]
-                        })
-                    }]
-                }, { quoted: msg });
-            } catch(e) {
-                // Fallback to text
-                let fallback = `🎬 *Results for "${query}"*\n\n`;
-                results.slice(0, 5).forEach((m, i) => {
-                    fallback += `*${i+1}.* ${m.title} (${m.year})\n⭐ ${m.rating} | ${m.genres.join(', ')}\n\n`;
-                });
-                fallback += `Reply .moviedl <number> to download\n${FOOTER}`;
-                await sendButtonsMsg(sock, from, fallback, msg);
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *No movies found*\n\n${FOOTER}`, msg); }
+            const data = await apiGet('/api/tmdb/search/movies', { q: args.join(' ') });
+            if (data.success && data.results?.length) {
+                const m = data.results[0];
+                const poster = getPoster(m);
+                const caption = movieToText(m) + `\n\n${FOOTER}`;
+                if (poster) await sock.sendMessage(from, { image: { url: poster }, caption }, { quoted: msg });
+                else await reply(caption);
+                await react('✅');
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
     }
 });
 
+// ═══════════════════════════════════════════
 // 2. TV SEARCH
-commands.push({
-    name: 'tvsearch', description: 'Search for TV series',
-    aliases: ['searchtv', 'findtv', 'seriessearch'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`📺 *TV SEARCH*\n\nUsage: ${config.PREFIX}tvsearch <title>\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
-        try {
-            const data = await movieApi('/search/tv', { q: query, limit: 10 });
-            const results = data.results || data.data?.results || [];
-            if (!results.length) throw new Error('No series found');
-
-            global.movieSearches[from] = { results, timestamp: Date.now(), type: 'tv' };
-            const tvBtns = results.slice(0, 5).map((m, i) => ({
-                name: 'quick_reply',
-                buttonParamsJson: JSON.stringify({
-                    display_text: `${i+1}. ${(m.title || m.name).substring(0, 20)}`,
-                    id: `movselect ${i+1}`
-                })
-            }));
-
-            let text = `╭───[ 📺 TV: "${query}" ]───\n\n`;
-            results.forEach((s, i) => {
-                text += `├ *${i+1}.* ${s.title || s.name} (${s.year || 'N/A'})\n`;
-                text += `├ ⭐ ${s.rating || 'N/A'} | 🎭 ${(s.genres || []).join(', ')}\n\n`;
-            });
-            text += `╰───◇\n*Reply 1-${results.length} for details*\n${FOOTER}`;
-
-            const first = results[0];
-            const poster = getPoster(first);
-            // Send poster with caption
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-            }
-            // Send catalog picker
-            try {
-                await sendInteractiveMessage(sock, from, {
-                    text: `🎬 *Results for "${query}"*\nPick a movie:`,
-                    footer: 'Megan Movie API',
-                    interactiveButtons: [{
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: 'Movies Found',
-                            sections: [{ title: 'Results', rows }]
-                        })
-                    }]
-                }, { quoted: msg });
-            } catch(e) {
-                // Fallback to text
-                let fallback = `🎬 *Results for "${query}"*\n\n`;
-                results.slice(0, 5).forEach((m, i) => {
-                    fallback += `*${i+1}.* ${m.title} (${m.year})\n⭐ ${m.rating} | ${m.genres.join(', ')}\n\n`;
-                });
-                fallback += `Reply .moviedl <number> to download\n${FOOTER}`;
-                await sendButtonsMsg(sock, from, fallback, msg);
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *No series found*\n\n${FOOTER}`, msg); }
-    }
-});
-
-// 3. ANIME SEARCH
-commands.push({
-    name: 'animesearch', description: 'Search for anime',
-    aliases: ['searchanime', 'findanime'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`🌸 *ANIME SEARCH*\n\nUsage: ${config.PREFIX}animesearch <title>\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
-        try {
-            const data = await movieApi('/search/anime', { q: query, limit: 10 });
-            const results = data.results || data.data?.results || [];
-            if (!results.length) throw new Error('No anime found');
-
-            global.movieSearches[from] = { results, timestamp: Date.now(), type: 'anime' };
-            const animeBtns = results.slice(0, 5).map((m, i) => ({
-                name: 'quick_reply',
-                buttonParamsJson: JSON.stringify({
-                    display_text: `${i+1}. ${(m.title || m.name).substring(0, 20)}`,
-                    id: `movselect ${i+1}`
-                })
-            }));
-
-            let text = `╭───[ 🌸 ANIME: "${query}" ]───\n\n`;
-            results.forEach((a, i) => {
-                text += `├ *${i+1}.* ${a.title || a.name} (${a.year || 'N/A'})\n`;
-                text += `├ ⭐ ${a.rating || 'N/A'} | 🎭 ${(a.genres || []).join(', ')}\n\n`;
-            });
-            text += `╰───◇\n*Reply 1-${results.length} for details*\n${FOOTER}`;
-
-            const first = results[0];
-            const poster = getPoster(first);
-            // Send poster with caption
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-            }
-            // Send catalog picker
-            try {
-                await sendInteractiveMessage(sock, from, {
-                    text: `🎬 *Results for "${query}"*\nPick a movie:`,
-                    footer: 'Megan Movie API',
-                    interactiveButtons: [{
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: 'Movies Found',
-                            sections: [{ title: 'Results', rows }]
-                        })
-                    }]
-                }, { quoted: msg });
-            } catch(e) {
-                // Fallback to text
-                let fallback = `🎬 *Results for "${query}"*\n\n`;
-                results.slice(0, 5).forEach((m, i) => {
-                    fallback += `*${i+1}.* ${m.title} (${m.year})\n⭐ ${m.rating} | ${m.genres.join(', ')}\n\n`;
-                });
-                fallback += `Reply .moviedl <number> to download\n${FOOTER}`;
-                await sendButtonsMsg(sock, from, fallback, msg);
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *No anime found*\n\n${FOOTER}`, msg); }
-    }
-});
-
 // ═══════════════════════════════════════════
-// DETAILS COMMANDS
-// ═══════════════════════════════════════════
-
-// 4. SELECT - Pick from search results
-commands.push({
-    name: 'movselect', description: 'Select from search results',
-    aliases: ['mspick', 'moviepick'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        const num = parseInt(args[0]);
-        const search = global.movieSearches[from];
-        if (isNaN(num) || !search || Date.now() - search.timestamp > 300000) {
-            return reply(`❌ No recent search. Use ${config.PREFIX}moviesearch, ${config.PREFIX}tvsearch, or ${config.PREFIX}animesearch first.\n\n${FOOTER}`);
-        }
-        if (num < 1 || num > search.results.length) return reply(`❌ Choose 1-${search.results.length}\n\n${FOOTER}`);
-        
-        const item = search.results[num - 1];
-        const detailPath = item.detail_path || item.slug || item.id || item.subject_id;
-        await react('🔍');
-
+commands.push({ name: 'tv', description: 'Search for a TV show on TMDB', aliases: ['tvshow', 'series', 'findtv'],
+    async execute({ msg, from, args, sock, react, reply }) {
+        if (!args.length) return reply(`📺 *TV SEARCH*\n\n*Usage:* ${config.PREFIX}tv <show>\n*Example:* ${config.PREFIX}tv Breaking Bad\n\n${FOOTER}`);
+        await react('📺');
         try {
-            if (search.type === 'tv') {
-                const data = await movieApi(`/tv/${detailPath}`);
-                const d = data.data || data;
-                const poster = getPoster(d);
-                let text = `╭───[ 📺 TV DETAILS ]───\n`;
-                text += `├ 📛 ${d.title}\n├ 📅 ${d.year || 'N/A'} | ⭐ ${d.rating || 'N/A'}\n`;
-                text += `├ 🎭 ${(d.genres || []).join(', ')}\n`;
-                text += `├ 📝 ${(d.description || '').substring(0, 200)}...\n`;
-                text += `├ 📺 ${d.total_seasons || '?'} seasons | ${d.total_episodes || '?'} episodes\n`;
-                text += `├ 📥 Download: ${config.PREFIX}tvdl ${detailPath}\n`;
-                text += `├ 🔗 Stream: ${config.PREFIX}tvstream ${detailPath}\n`;
-                text += `╰───◇\n${FOOTER}`;
-
-                if (poster) {
-                    await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-                } else {
-                    await sendButtonsMsg(sock, from, text, msg);
-                }
-            } else {
-                const data = await movieApi(`/movie/${detailPath}`);
-                const d = data.data || data;
-                const poster = getPoster(d);
-                let text = `╭───[ 🎬 MOVIE DETAILS ]───\n`;
-                text += `├ 📛 ${d.title}\n├ 📅 ${d.year || 'N/A'} | ⭐ ${d.rating || 'N/A'}\n`;
-                text += `├ ⏱️ ${d.duration_minutes || 'N/A'} min | 🌍 ${d.country || 'N/A'}\n`;
-                text += `├ 🎭 ${(d.genres || []).join(', ')}\n`;
-                text += `├ 📝 ${(d.description || '').substring(0, 200)}...\n`;
-                if (d.downloads?.length) {
-                    text += `├ 📥 Qualities: ${d.downloads.map(dl => dl.quality).join(', ')}\n`;
-                }
-                text += `├ 📥 Download: ${config.PREFIX}moviedl ${detailPath}\n`;
-                text += `├ 🔗 Stream: ${config.PREFIX}moviestream ${detailPath}\n`;
-                text += `╰───◇\n${FOOTER}`;
-
-                if (poster) {
-                    await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-                } else {
-                    await sendButtonsMsg(sock, from, text, msg);
-                }
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *Failed to get details*\n\n${FOOTER}`, msg); }
-    }
-});
-
-// ═══════════════════════════════════════════
-// QUICK DOWNLOAD - Search, Pick First, Download
-// ═══════════════════════════════════════════
-
-// 5. MOVIEDL - Quick movie download (first result)
-commands.push({
-    name: 'moviedl', description: 'Search & download movie (first result)',
-    aliases: ['mdl', 'moviedownload'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`🎬 *MOVIE DOWNLOAD*\n\nUsage: ${config.PREFIX}moviedl <movie name>\nSearches and downloads first result\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
-        await sock.sendMessage(from, { text: `🔍 *Searching:* "${query}"...\n\n${FOOTER}` }, { quoted: msg });
-
-        try {
-            // Search
-            const searchData = await movieApi('/search/movies', { q: query, limit: 3 });
-            const results = searchData.results || searchData.data?.results || [];
-            if (!results.length) throw new Error('No movies found');
-
-            const movie = results[0];
-            const detailPath = movie.detail_path || movie.slug || movie.id || movie.subject_id;
-            const poster = getPoster(movie);
-
-            // Show what we found
-            let foundText = `╭───[ 🎬 FOUND ]───\n├ 📛 ${movie.title || movie.name}\n├ 📅 ${movie.year || 'N/A'} | ⭐ ${movie.rating || 'N/A'}\n├ ⬇️ Fetching download...\n╰───◇\n${FOOTER}`;
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: foundText }, { quoted: msg });
-            } else {
-                await sock.sendMessage(from, { text: foundText }, { quoted: msg });
-            }
-
-            // Get details with download links
-            const detailData = await movieApi(`/movie/${detailPath}`);
-            const d = detailData.data || detailData;
-            const downloads = d.downloads || [];
-            
-            if (!downloads.length) throw new Error('No download links available');
-
-            // Pick highest quality
-            const best = downloads[0];
-            const dlUrl = best.url;
-
-            await sock.sendMessage(from, { text: `⬇️ *Downloading:* ${d.title}\n📊 Quality: ${best.quality}\n💾 Size: ${formatSize(best.size_mb)}\n\n${FOOTER}` }, { quoted: msg });
-
-            // Download
-            let tempFile = null;
-            try {
-                const ext = dlUrl.includes('.mp4') ? 'mp4' : dlUrl.includes('.mkv') ? 'mkv' : 'mp4';
-                const filename = `movie_${Date.now()}.${ext}`;
-                tempFile = await downloadFile(dlUrl, filename);
-                const buffer = await fs.readFile(tempFile);
-                const sizeMB = (buffer.length / 1048576).toFixed(1);
-
-                // Send as document
-                await sock.sendMessage(from, {
-                    document: buffer,
-                    fileName: `${cleanFileName(d.title)}.${ext}`,
-                    mimetype: 'video/mp4',
-                    caption: `🎬 ${d.title}\n📊 ${best.quality} | 💾 ${sizeMB} MB\n\n${FOOTER}`
-                }, { quoted: msg });
-
-                // Success message with buttons
-                let doneText = `╭───[ ✅ DOWNLOADED ]───\n├ 🎬 ${d.title}\n├ 📊 ${best.quality}\n├ 💾 ${sizeMB} MB\n├ 📅 ${d.year || 'N/A'} | ⭐ ${d.rating || 'N/A'}\n╰───◇\n${FOOTER}`;
-                const btns = [];
-                if (d.streams?.length) btns.push({ name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: '🔗 Stream', url: d.streams[0].url }) });
-                await sendButtonsMsg(sock, from, doneText, msg, btns);
+            const data = await apiGet('/api/tmdb/search/tv', { q: args.join(' ') });
+            if (data.success && data.results?.length) {
+                const s = data.results[0];
+                const poster = getPoster(s);
+                const caption = tvToText(s) + `\n\n${FOOTER}`;
+                if (poster) await sock.sendMessage(from, { image: { url: poster }, caption }, { quoted: msg });
+                else await reply(caption);
                 await react('✅');
-            } finally {
-                if (tempFile) await fs.unlink(tempFile).catch(() => {});
-                await cleanTemp();
-            }
-        } catch (e) {
-            console.error('MovieDL error:', e.message);
-            await react('❌');
-            await sendButtonsMsg(sock, from, `❌ *Failed:* ${e.message}\n\n${FOOTER}`, msg);
-        }
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
     }
 });
 
-// 6. TVDL - Quick TV episode download (first result, first season, first episode)
-commands.push({
-    name: 'tvdl', description: 'Search & download TV episode (first result)',
-    aliases: ['tdl', 'tvdownload'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`📺 *TV DOWNLOAD*\n\nUsage: ${config.PREFIX}tvdl <series name>\nSearches and downloads first result S01E01\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
-        await sock.sendMessage(from, { text: `🔍 *Searching:* "${query}"...\n\n${FOOTER}` }, { quoted: msg });
-
+// ═══════════════════════════════════════════
+// 3. PEOPLE SEARCH
+// ═══════════════════════════════════════════
+commands.push({ name: 'actor', description: 'Search for a person on TMDB', aliases: ['person', 'people', 'celebrity', 'star'],
+    async execute({ msg, from, args, sock, react, reply }) {
+        if (!args.length) return reply(`🌟 *PEOPLE SEARCH*\n\n*Usage:* ${config.PREFIX}actor <name>\n*Example:* ${config.PREFIX}actor Tom Hanks\n\n${FOOTER}`);
+        await react('🌟');
         try {
-            // Search
-            const searchData = await movieApi('/search/tv', { q: query, limit: 3 });
-            const results = searchData.results || searchData.data?.results || [];
-            if (!results.length) throw new Error('No series found');
-
-            const series = results[0];
-            const detailPath = series.detail_path || series.slug || series.id || series.subject_id;
-            const poster = getPoster(series);
-
-            // Show what we found
-            let foundText = `╭───[ 📺 FOUND ]───\n├ 📛 ${series.title || series.name}\n├ 📅 ${series.year || 'N/A'} | ⭐ ${series.rating || 'N/A'}\n├ ⬇️ Fetching S01E01...\n╰───◇\n${FOOTER}`;
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: foundText }, { quoted: msg });
-            } else {
-                await sock.sendMessage(from, { text: foundText }, { quoted: msg });
-            }
-
-            // Get series details
-            const detailData = await movieApi(`/tv/${detailPath}`);
-            const d = detailData.data || detailData;
-            const seasons = d.seasons || [];
-            if (!seasons.length) throw new Error('No seasons available');
-
-            const season1 = seasons.find(s => s.season === 1) || seasons[0];
-            const episodes = season1.episodes || [];
-            if (!episodes.length) throw new Error('No episodes available');
-
-            const ep1 = episodes[0];
-            const dlUrl = ep1.download_url || ep1.stream_url;
-            if (!dlUrl) throw new Error('No download URL');
-
-            await sock.sendMessage(from, { text: `⬇️ *Downloading:* ${d.title} S${season1.season}E${ep1.episode}\n💾 Size: ${formatSize(ep1.size_mb)}\n\n${FOOTER}` }, { quoted: msg });
-
-            // Download
-            let tempFile = null;
-            try {
-                const ext = dlUrl.includes('.mp4') ? 'mp4' : dlUrl.includes('.mkv') ? 'mkv' : 'mp4';
-                const filename = `series_${Date.now()}.${ext}`;
-                tempFile = await downloadFile(dlUrl, filename);
-                const buffer = await fs.readFile(tempFile);
-                const sizeMB = (buffer.length / 1048576).toFixed(1);
-
-                await sock.sendMessage(from, {
-                    document: buffer,
-                    fileName: `${cleanFileName(d.title)}_S${season1.season}E${ep1.episode}.${ext}`,
-                    mimetype: 'video/mp4',
-                    caption: `📺 ${d.title} S${season1.season}E${ep1.episode}: ${ep1.name || ''}\n💾 ${sizeMB} MB\n\n${FOOTER}`
-                }, { quoted: msg });
-
-                let doneText = `╭───[ ✅ DOWNLOADED ]───\n├ 📺 ${d.title}\n├ 🎬 S${season1.season}E${ep1.episode}: ${ep1.name || 'Episode'}\n├ 💾 ${sizeMB} MB\n├ 📅 ${d.year || 'N/A'} | ⭐ ${d.rating || 'N/A'}\n╰───◇\n${FOOTER}`;
-                const btns = [];
-                if (ep1.stream_url) btns.push({ name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: '🔗 Stream', url: ep1.stream_url }) });
-                await sendButtonsMsg(sock, from, doneText, msg, btns);
+            const data = await apiGet('/api/tmdb/search/people', { q: args.join(' ') });
+            if (data.success && data.results?.length) {
+                const p = data.results[0];
+                const img = p.profile || p.profilePath || p.image || getPoster(p);
+                let cap = `🌟 *${p.name}*`;
+                if (p.knownFor) cap += `\n🎭 Known for: ${p.knownFor}`;
+                if (p.knownForDepartment) cap += `\n📂 Department: ${p.knownForDepartment}`;
+                if (p.popularity) cap += `\n🔥 Popularity: ${p.popularity}`;
+                cap += `\n\n🔗 https://www.themoviedb.org/person/${p.id}\n\n${FOOTER}`;
+                if (img) await sock.sendMessage(from, { image: { url: img }, caption: cap }, { quoted: msg });
+                else await reply(cap);
                 await react('✅');
-            } finally {
-                if (tempFile) await fs.unlink(tempFile).catch(() => {});
-                await cleanTemp();
-            }
-        } catch (e) {
-            console.error('TVDL error:', e.message);
-            await react('❌');
-            await sendButtonsMsg(sock, from, `❌ *Failed:* ${e.message}\n\n${FOOTER}`, msg);
-        }
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
     }
 });
 
-// 7. ANIMEDL - Quick anime download
-commands.push({
-    name: 'animedl', description: 'Search & download anime (first result)',
-    aliases: ['adl', 'animedownload'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`🌸 *ANIME DOWNLOAD*\n\nUsage: ${config.PREFIX}animedl <anime name>\nSearches and downloads first result\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
-        await sock.sendMessage(from, { text: `🔍 *Searching:* "${query}"...\n\n${FOOTER}` }, { quoted: msg });
-
+// ═══════════════════════════════════════════
+// 4. MOVIE DETAIL (by ID)
+// ═══════════════════════════════════════════
+commands.push({ name: 'movieid', description: 'Get movie details by TMDB ID', aliases: ['mdetail', 'movieinfo', 'moviebyid'],
+    async execute({ msg, from, args, sock, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🎬 *MOVIE DETAILS*\n\n*Usage:* ${config.PREFIX}movieid <id>\n*Example:* ${config.PREFIX}movieid 27205\n\n${FOOTER}`);
+        await react('🎬');
         try {
-            const searchData = await movieApi('/search/anime', { q: query, limit: 3 });
-            const results = searchData.results || searchData.data?.results || [];
-            if (!results.length) throw new Error('No anime found');
-
-            const anime = results[0];
-            const detailPath = anime.detail_path || anime.slug || anime.id || anime.subject_id;
-            const poster = getPoster(anime);
-
-            let foundText = `╭───[ 🌸 FOUND ]───\n├ 📛 ${anime.title || anime.name}\n├ 📅 ${anime.year || 'N/A'} | ⭐ ${anime.rating || 'N/A'}\n├ ⬇️ Fetching download...\n╰───◇\n${FOOTER}`;
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: foundText }, { quoted: msg });
-            }
-
-            const detailData = await movieApi(`/anime/${detailPath}`);
-            const d = detailData.data || detailData;
-            const downloads = d.downloads || [];
-            if (!downloads.length) throw new Error('No download links');
-
-            const best = downloads[0];
-            const dlUrl = best.url;
-
-            await sock.sendMessage(from, { text: `⬇️ *Downloading:* ${d.title}\n📊 ${best.quality} | 💾 ${formatSize(best.size_mb)}\n\n${FOOTER}` }, { quoted: msg });
-
-            let tempFile = null;
-            try {
-                const ext = 'mp4';
-                const filename = `movie_${Date.now()}.${ext}`;
-                tempFile = await downloadFile(dlUrl, filename);
-                const buffer = await fs.readFile(tempFile);
-                const sizeMB = (buffer.length / 1048576).toFixed(1);
-
-                await sock.sendMessage(from, {
-                    document: buffer,
-                    fileName: `${cleanFileName(d.title)}.${ext}`,
-                    mimetype: 'video/mp4',
-                    caption: `🌸 ${d.title}\n📊 ${best.quality} | 💾 ${sizeMB} MB\n\n${FOOTER}`
-                }, { quoted: msg });
-
-                await sendButtonsMsg(sock, from, `✅ Downloaded!\n🌸 ${d.title}\n💾 ${sizeMB} MB\n\n${FOOTER}`, msg);
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}`);
+            if (data.success) {
+                const poster = getPoster(data);
+                const caption = movieToText(data) + `\n\n${FOOTER}`;
+                if (poster) await sock.sendMessage(from, { image: { url: poster }, caption }, { quoted: msg });
+                else await reply(caption);
                 await react('✅');
-            } finally {
-                if (tempFile) await fs.unlink(tempFile).catch(() => {});
-                await cleanTemp();
-            }
-        } catch (e) {
-            console.error('AnimeDL error:', e.message);
-            await react('❌');
-            await sendButtonsMsg(sock, from, `❌ *Failed:* ${e.message}\n\n${FOOTER}`, msg);
-        }
+            } else { await reply(`❌ *Not found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
     }
 });
 
 // ═══════════════════════════════════════════
-// STREAM LINKS
+// 5. TV DETAIL (by ID)
 // ═══════════════════════════════════════════
-
-// 8. MOVIESTREAM - Get movie stream link
-commands.push({
-    name: 'moviestream', description: 'Get movie stream link',
-    aliases: ['mstream', 'watchmovie'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`🔗 *MOVIE STREAM*\n\nUsage: ${config.PREFIX}moviestream <movie name>\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
+commands.push({ name: 'tvid', description: 'Get TV show details by TMDB ID', aliases: ['tvdetail', 'tvinfo', 'tvbyid'],
+    async execute({ msg, from, args, sock, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`📺 *TV DETAILS*\n\n*Usage:* ${config.PREFIX}tvid <id>\n*Example:* ${config.PREFIX}tvid 1396\n\n${FOOTER}`);
+        await react('📺');
         try {
-            const searchData = await movieApi('/search/movies', { q: query, limit: 3 });
-            const results = searchData.results || searchData.data?.results || [];
-            if (!results.length) throw new Error('No movies found');
-
-            const movie = results[0];
-            const detailPath = movie.detail_path || movie.slug || movie.id;
-            const detailData = await movieApi(`/movie/${detailPath}`);
-            const d = detailData.data || detailData;
-            const streams = d.streams || [];
-            const poster = getPoster(d);
-
-            if (!streams.length) {
-                return sendButtonsMsg(sock, from, `❌ *No stream available*\n\nUse ${config.PREFIX}moviedl instead\n\n${FOOTER}`, msg);
-            }
-
-            let text = `╭───[ 🔗 STREAM ]───\n├ 🎬 ${d.title}\n├ 📅 ${d.year || 'N/A'} | ⭐ ${d.rating || 'N/A'}\n\n`;
-            streams.forEach(s => {
-                text += `├ 📊 ${s.quality}: ${s.url}\n`;
-            });
-            text += `╰───◇\n${FOOTER}`;
-
-            const btns = streams.slice(0, 3).map(s => ({
-                name: 'cta_url',
-                buttonParamsJson: JSON.stringify({ display_text: `▶️ ${s.quality}`, url: s.url })
-            }));
-
-            // Send poster with caption
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-            }
-            // Send catalog picker
-            try {
-                await sendInteractiveMessage(sock, from, {
-                    text: `🎬 *Results for "${query}"*\nPick a movie:`,
-                    footer: 'Megan Movie API',
-                    interactiveButtons: [{
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: 'Movies Found',
-                            sections: [{ title: 'Results', rows }]
-                        })
-                    }]
-                }, { quoted: msg });
-            } catch(e) {
-                // Fallback to text
-                let fallback = `🎬 *Results for "${query}"*\n\n`;
-                results.slice(0, 5).forEach((m, i) => {
-                    fallback += `*${i+1}.* ${m.title} (${m.year})\n⭐ ${m.rating} | ${m.genres.join(', ')}\n\n`;
-                });
-                fallback += `Reply .moviedl <number> to download\n${FOOTER}`;
-                await sendButtonsMsg(sock, from, fallback, msg);
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *Failed*\n\n${FOOTER}`, msg); }
+            const data = await apiGet(`/api/tmdb/tv/${args[0]}`);
+            if (data.success) {
+                const poster = getPoster(data);
+                const caption = tvToText(data) + `\n\n${FOOTER}`;
+                if (poster) await sock.sendMessage(from, { image: { url: poster }, caption }, { quoted: msg });
+                else await reply(caption);
+                await react('✅');
+            } else { await reply(`❌ *Not found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
     }
 });
 
-// 9. TVSTREAM - Get TV stream link
-commands.push({
-    name: 'tvstream', description: 'Get TV series stream link',
-    aliases: ['tstream', 'watchtv'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        if (!args.length) { await react('ℹ️'); return reply(`🔗 *TV STREAM*\n\nUsage: ${config.PREFIX}tvstream <series name>\n\n${FOOTER}`); }
-        const query = args.join(' ');
-        await react('🔍');
+// ═══════════════════════════════════════════
+// 6. MOVIE CREDITS (Cast & Crew)
+// ═══════════════════════════════════════════
+commands.push({ name: 'cast', description: 'Get movie cast and crew', aliases: ['credits', 'moviecast', 'actors'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🎭 *MOVIE CAST*\n\n*Usage:* ${config.PREFIX}cast <movie_id>\n*Example:* ${config.PREFIX}cast 27205\n\n${FOOTER}`);
+        await react('🎭');
         try {
-            const searchData = await movieApi('/search/tv', { q: query, limit: 3 });
-            const results = searchData.results || searchData.data?.results || [];
-            if (!results.length) throw new Error('No series found');
-
-            const series = results[0];
-            const detailPath = series.detail_path || series.slug || series.id;
-            const detailData = await movieApi(`/tv/${detailPath}`);
-            const d = detailData.data || detailData;
-            const seasons = d.seasons || [];
-            const poster = getPoster(d);
-
-            if (!seasons.length) throw new Error('No seasons');
-
-            // Show first season episodes with stream links
-            const s1 = seasons[0];
-            const episodes = (s1.episodes || []).slice(0, 5);
-
-            let text = `╭───[ 🔗 TV STREAM ]───\n├ 📺 ${d.title}\n├ 📅 ${d.year || 'N/A'} | ⭐ ${d.rating || 'N/A'}\n├ 📺 Season ${s1.season}\n\n`;
-            episodes.forEach(ep => {
-                text += `├ 🎬 E${ep.episode}: ${ep.name || 'Episode'}\n├ 🔗 ${ep.stream_url || 'No stream'}\n\n`;
-            });
-            text += `╰───◇\n${FOOTER}`;
-
-            const btns = episodes.filter(e => e.stream_url).slice(0, 3).map(e => ({
-                name: 'cta_url',
-                buttonParamsJson: JSON.stringify({ display_text: `▶️ S${s1.season}E${e.episode}`, url: e.stream_url })
-            }));
-
-            // Send poster with caption
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-            }
-            // Send catalog picker
-            try {
-                await sendInteractiveMessage(sock, from, {
-                    text: `🎬 *Results for "${query}"*\nPick a movie:`,
-                    footer: 'Megan Movie API',
-                    interactiveButtons: [{
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: 'Movies Found',
-                            sections: [{ title: 'Results', rows }]
-                        })
-                    }]
-                }, { quoted: msg });
-            } catch(e) {
-                // Fallback to text
-                let fallback = `🎬 *Results for "${query}"*\n\n`;
-                results.slice(0, 5).forEach((m, i) => {
-                    fallback += `*${i+1}.* ${m.title} (${m.year})\n⭐ ${m.rating} | ${m.genres.join(', ')}\n\n`;
-                });
-                fallback += `Reply .moviedl <number> to download\n${FOOTER}`;
-                await sendButtonsMsg(sock, from, fallback, msg);
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *Failed*\n\n${FOOTER}`, msg); }
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}/credits`);
+            if (data.success) {
+                let list = `🎭 *CAST & CREW - Movie #${args[0]}*\n\n`;
+                if (data.cast?.length) {
+                    list += `*👥 CAST (${Math.min(data.cast.length, 15)} shown)*\n`;
+                    data.cast.slice(0, 15).forEach((c, i) => list += `${i+1}. ${c.name} as _${c.character || c.role || 'N/A'}_\n`);
+                }
+                if (data.crew?.length) {
+                    list += `\n*🎬 CREW*\n`;
+                    const dirs = data.crew.filter(c => c.job === 'Director');
+                    if (dirs.length) list += `Director: ${dirs.map(d=>d.name).join(', ')}\n`;
+                    const writers = data.crew.filter(c => c.department === 'Writing');
+                    if (writers.length) list += `Writers: ${writers.slice(0,5).map(w=>w.name).join(', ')}\n`;
+                }
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No credits found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
     }
 });
 
 // ═══════════════════════════════════════════
-// HOMEPAGE / BROWSE
+// 7. MOVIE VIDEOS (Trailers)
+// ═══════════════════════════════════════════
+commands.push({ name: 'trailer', description: 'Get movie trailers and videos', aliases: ['trailers', 'movievideos', 'videos'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🎥 *MOVIE TRAILERS*\n\n*Usage:* ${config.PREFIX}trailer <movie_id>\n*Example:* ${config.PREFIX}trailer 27205\n\n${FOOTER}`);
+        await react('🎥');
+        try {
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}/videos`);
+            if (data.success && data.videos?.length) {
+                let list = `🎥 *TRAILERS - Movie #${args[0]}*\n\n`;
+                const trailers = data.videos.filter(v => v.type === 'Trailer');
+                (trailers.length ? trailers : data.videos).slice(0, 10).forEach((v, i) => {
+                    const url = v.site === 'YouTube' ? `https://youtube.com/watch?v=${v.key}` : v.url || '';
+                    list += `${i+1}. *${v.name}* (${v.type})\n   ${url}\n\n`;
+                });
+                list += FOOTER;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No videos found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 8. STREAMING PROVIDERS
+// ═══════════════════════════════════════════
+commands.push({ name: 'providers', description: 'See where to watch a movie', aliases: ['watch', 'streaming', 'wheretowatch', 'providersmovie'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`📡 *STREAMING PROVIDERS*\n\n*Usage:* ${config.PREFIX}providers <movie_id>\n*Example:* ${config.PREFIX}providers 27205\n\n${FOOTER}`);
+        await react('📡');
+        try {
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}/providers`);
+            if (data.success && data.providers) {
+                let list = `📡 *WHERE TO WATCH - Movie #${args[0]}*\n\n`;
+                const p = data.providers;
+                if (p.flatrate?.length) { list += `*Stream:* ${p.flatrate.map(x=>x.name||x).join(', ')}\n`; }
+                if (p.rent?.length) { list += `*Rent:* ${p.rent.map(x=>x.name||x).join(', ')}\n`; }
+                if (p.buy?.length) { list += `*Buy:* ${p.buy.map(x=>x.name||x).join(', ')}\n`; }
+                if (p.ads?.length) { list += `*Free (ads):* ${p.ads.map(x=>x.name||x).join(', ')}\n`; }
+                if (!p.flatrate?.length && !p.rent?.length && !p.buy?.length) list += `No streaming info available for this region.\n`;
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No provider info*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 9. SIMILAR MOVIES
+// ═══════════════════════════════════════════
+commands.push({ name: 'similar', description: 'Get similar movies', aliases: ['similarmovies', 'relatedmovies', 'likemovie'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🔄 *SIMILAR MOVIES*\n\n*Usage:* ${config.PREFIX}similar <movie_id>\n*Example:* ${config.PREFIX}similar 27205\n\n${FOOTER}`);
+        await react('🔄');
+        try {
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}/similar`);
+            if (data.success && data.results?.length) {
+                let list = `🔄 *SIMILAR TO #${args[0]}*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => {
+                    list += `${i+1}. *${m.title}* ⭐${safeRating(m)} (${m.releaseDate?.substring(0,4) || 'N/A'})\n`;
+                });
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *None found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 10. MOVIE RECOMMENDATIONS
+// ═══════════════════════════════════════════
+commands.push({ name: 'recommend', description: 'Get movie recommendations', aliases: ['recommendations', 'suggested', 'formoviefans'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`💡 *RECOMMENDATIONS*\n\n*Usage:* ${config.PREFIX}recommend <movie_id>\n*Example:* ${config.PREFIX}recommend 27205\n\n${FOOTER}`);
+        await react('💡');
+        try {
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}/recommendations`);
+            if (data.success && data.results?.length) {
+                let list = `💡 *RECOMMENDED IF YOU LIKED #${args[0]}*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => {
+                    list += `${i+1}. *${m.title}* ⭐${safeRating(m)} (${m.releaseDate?.substring(0,4) || 'N/A'})\n`;
+                });
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *None found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 11. MOVIE IMAGES
+// ═══════════════════════════════════════════
+commands.push({ name: 'movieimages', description: 'Get movie posters and backdrops', aliases: ['moviepics', 'movieposters', 'moviebackdrops', 'filmpics'],
+    async execute({ msg, from, args, sock, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🖼️ *MOVIE IMAGES*\n\n*Usage:* ${config.PREFIX}movieimages <id>\n*Example:* ${config.PREFIX}movieimages 27205\n\n${FOOTER}`);
+        await react('🖼️');
+        try {
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}/images`);
+            if (data.success && data.backdrops?.length) {
+                await sock.sendMessage(from, { image: { url: data.backdrops[0] }, caption: `🖼️ *Backdrop #1/${data.backdrops.length}*\nMovie #${args[0]}\n\n${FOOTER}` }, { quoted: msg });
+                if (data.posters?.length) {
+                    await sock.sendMessage(from, { image: { url: data.posters[0] }, caption: `🖼️ *Poster #1/${data.posters.length}*\nMovie #${args[0]}\n\n${FOOTER}` }, { quoted: msg });
+                }
+                await react('✅');
+            } else { await reply(`❌ *No images*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 12. MOVIE REVIEWS
+// ═══════════════════════════════════════════
+commands.push({ name: 'reviews', description: 'Get movie reviews', aliases: ['moviereviews', 'critics', 'review'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`📝 *MOVIE REVIEWS*\n\n*Usage:* ${config.PREFIX}reviews <movie_id>\n*Example:* ${config.PREFIX}reviews 27205\n\n${FOOTER}`);
+        await react('📝');
+        try {
+            const data = await apiGet(`/api/tmdb/movie/${args[0]}/reviews`);
+            if (data.success && data.reviews?.length) {
+                let list = `📝 *REVIEWS - Movie #${args[0]}*\n\n`;
+                data.reviews.slice(0, 5).forEach((r, i) => {
+                    list += `*${i+1}. ${r.author || 'Anonymous'}*\n${(r.content||'').substring(0,200)}...\n\n`;
+                });
+                list += FOOTER;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No reviews found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 13. PERSON DETAIL
+// ═══════════════════════════════════════════
+commands.push({ name: 'person', description: 'Get person/actor details', aliases: ['persondetail', 'actorinfo', 'biography'],
+    async execute({ msg, from, args, sock, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🌟 *PERSON DETAILS*\n\n*Usage:* ${config.PREFIX}person <id>\n*Example:* ${config.PREFIX}person 31\n\n${FOOTER}`);
+        await react('🌟');
+        try {
+            const data = await apiGet(`/api/tmdb/person/${args[0]}`);
+            if (data.success) {
+                const p = data;
+                const img = p.profile || p.image || p.photo || getPoster(p);
+                let cap = `🌟 *${p.name}*`;
+                if (p.birthday) cap += `\n🎂 ${p.birthday}` + (p.deathday ? ` - ${p.deathday}` : p.age ? ` (age ${p.age})` : '');
+                if (p.placeOfBirth) cap += `\n📍 ${p.placeOfBirth}`;
+                if (p.knownForDepartment) cap += `\n📂 ${p.knownForDepartment}`;
+                if (p.biography) cap += `\n\n📝 ${p.biography.substring(0, 400)}`;
+                if (p.imdbId) cap += `\n🎯 IMDb: https://imdb.com/name/${p.imdbId}`;
+                cap += `\n\n${FOOTER}`;
+                if (img) await sock.sendMessage(from, { image: { url: img }, caption: cap }, { quoted: msg });
+                else await reply(cap);
+                await react('✅');
+            } else { await reply(`❌ *Not found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 14. PERSON MOVIES
+// ═══════════════════════════════════════════
+commands.push({ name: 'filmos', description: "Get person's movie credits", aliases: ['personmovies', 'actorfilms', 'filmography'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🎬 *FILMOGRAPHY*\n\n*Usage:* ${config.PREFIX}filmos <person_id>\n*Example:* ${config.PREFIX}filmos 31\n\n${FOOTER}`);
+        await react('🎬');
+        try {
+            const data = await apiGet(`/api/tmdb/person/${args[0]}/movies`);
+            if (data.success && data.movies?.length) {
+                let list = `🎬 *FILMOGRAPHY - Person #${args[0]}*\n\n`;
+                data.movies.slice(0, 15).forEach((m, i) => {
+                    list += `${i+1}. *${m.title}* ${m.releaseDate ? '('+m.releaseDate.substring(0,4)+')' : ''} ⭐${safeRating(m)}\n   as ${m.character || 'N/A'}\n`;
+                });
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No credits found*\n\n${FOOTER}`); await react('❌'); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 15-19: DISCOVER & LISTS
 // ═══════════════════════════════════════════
 
-// 10. TRENDING
-commands.push({
-    name: 'trending', description: 'Show trending movies & TV',
-    aliases: ['trendingnow', 'whatshot'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
+// Trending (movies & TV)
+commands.push({ name: 'trending', description: 'Get trending movies this week', aliases: ['trendingmovies', 'hottmovies', 'trend'],
+    async execute({ msg, from, args, react, reply }) {
         await react('🔥');
         try {
-            const data = await movieApi('/homepage/trending');
-            const results = data.trending || data.results || data.data || [];
-            if (!results.length) throw new Error('No trending');
-
-            global.movieSearches[from] = { results, timestamp: Date.now(), type: 'movie' };
-
-            let text = `╭───[ 🔥 TRENDING ]───\n\n`;
-            results.slice(0, 10).forEach((m, i) => {
-                text += `├ *${i+1}.* ${m.title || m.name} (${m.year || 'N/A'})\n├ ⭐ ${m.rating || 'N/A'} | 🎭 ${(m.genres || []).join(', ')}\n\n`;
-            });
-            text += `╰───◇\n*Reply 1-10 for details*\n${FOOTER}`;
-
-            const first = results[0];
-            const poster = getPoster(first);
-            // Send poster with caption
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-            }
-            // Send catalog picker
-            try {
-                await sendInteractiveMessage(sock, from, {
-                    text: `🎬 *Results for "${query}"*\nPick a movie:`,
-                    footer: 'Megan Movie API',
-                    interactiveButtons: [{
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: 'Movies Found',
-                            sections: [{ title: 'Results', rows }]
-                        })
-                    }]
-                }, { quoted: msg });
-            } catch(e) {
-                // Fallback to text
-                let fallback = `🎬 *Results for "${query}"*\n\n`;
-                results.slice(0, 5).forEach((m, i) => {
-                    fallback += `*${i+1}.* ${m.title} (${m.year})\n⭐ ${m.rating} | ${m.genres.join(', ')}\n\n`;
+            const type = args[0] === 'tv' ? 'tv' : 'movie';
+            const time = args[1] === 'day' ? 'day' : 'week';
+            const data = await apiGet(`/api/tmdb/trending/${type}/${time}`);
+            if (data.success && data.results?.length) {
+                let list = `🔥 *TRENDING ${type.toUpperCase()} (${time})*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => {
+                    list += `${i+1}. *${m.title || m.name}* ⭐${safeRating(m)}\n   ${(m.overview||'').substring(0,70)}...\n\n`;
                 });
-                fallback += `Reply .moviedl <number> to download\n${FOOTER}`;
-                await sendButtonsMsg(sock, from, fallback, msg);
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *Failed*\n\n${FOOTER}`, msg); }
-    }
-});
-
-// 11-23: Category commands (action, horror, romance, etc.)
-const CATEGORIES = [
-    { name: 'action', emoji: '💥', desc: 'Action movies' },
-    { name: 'horror', emoji: '👻', desc: 'Horror movies' },
-    { name: 'romance', emoji: '💕', desc: 'Romance movies' },
-    { name: 'adventure', emoji: '🗺️', desc: 'Adventure movies' },
-    { name: 'cinema', emoji: '🎦', desc: 'Cinema releases' },
-    { name: 'hot', emoji: '🔥', desc: 'Hot content' },
-    { name: 'kdrama', emoji: '🇰🇷', desc: 'K-Dramas' },
-    { name: 'cdrama', emoji: '🇨🇳', desc: 'C-Dramas' },
-    { name: 'turkish', emoji: '🇹🇷', desc: 'Turkish dramas' },
-    { name: 'upcoming', emoji: '📅', desc: 'Upcoming releases' },
-    { name: 'blackshows', emoji: '✊', desc: 'Black shows' },
-    { name: 'smartstart', emoji: '🧒', desc: 'Smart Start cartoons' },
-];
-
-CATEGORIES.forEach(({ name, emoji, desc }) => {
-    commands.push({
-        name, description: `Show ${desc}`,
-        aliases: name === 'hot' ? ['hotmovies'] : name === 'cinema' ? ['cinemamovies'] : [],
-        async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-            await react(emoji);
-            try {
-                const data = await movieApi(`/homepage/${name}`);
-                let results = data[name] || data.movies || data.results || data.data || [];
-                if (data[name]?.movies) results = data[name].movies;
-                if (!results.length) throw new Error(`No ${desc}`);
-
-                global.movieSearches[from] = { results, timestamp: Date.now(), type: 'movie' };
-
-                let text = `╭───[ ${emoji} ${desc.toUpperCase()} ]───\n\n`;
-                results.slice(0, 10).forEach((m, i) => {
-                    text += `├ *${i+1}.* ${m.title || m.name} (${m.year || 'N/A'})\n├ ⭐ ${m.rating || 'N/A'} | 🎭 ${(m.genres || []).join(', ')}\n\n`;
-                });
-                text += `╰───◇\n*Reply 1-10 for details*\n${FOOTER}`;
-
-                const first = results[0];
-                const poster = getPoster(first);
-                if (poster) {
-                    await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-                } else {
-                    await sendButtonsMsg(sock, from, text, msg);
-                }
+                list += FOOTER;
+                await reply(list);
                 await react('✅');
-            } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *No ${desc}*\n\n${FOOTER}`, msg); }
-        }
-    });
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
 });
 
-// 24. ANIME HOME
-commands.push({
-    name: 'animehome', description: 'Show anime homepage',
-    aliases: ['animebrowse', 'animelist'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        await react('🌸');
+// Popular movies & TV
+commands.push({ name: 'popular', description: 'Get popular movies or TV', aliases: ['popularmovies', 'popmovies', 'poptv'],
+    async execute({ msg, from, args, react, reply }) {
+        const type = args[0] === 'tv' ? 'tv' : 'movies';
+        await react('🌟');
         try {
-            const data = await movieApi('/homepage/anime');
-            const results = data.anime || data.movies || data.results || [];
-            if (!results.length) throw new Error('No anime');
-
-            global.movieSearches[from] = { results, timestamp: Date.now(), type: 'anime' };
-            const animeBtns = results.slice(0, 5).map((m, i) => ({
-                name: 'quick_reply',
-                buttonParamsJson: JSON.stringify({
-                    display_text: `${i+1}. ${(m.title || m.name).substring(0, 20)}`,
-                    id: `movselect ${i+1}`
-                })
-            }));
-
-            let text = `╭───[ 🌸 ANIME ]───\n\n`;
-            results.slice(0, 10).forEach((a, i) => {
-                text += `├ *${i+1}.* ${a.title || a.name} (${a.year || 'N/A'})\n├ ⭐ ${a.rating || 'N/A'} | 🎭 ${(a.genres || []).join(', ')}\n\n`;
-            });
-            text += `╰───◇\n*Reply 1-10 for details*\n${FOOTER}`;
-
-            const first = results[0];
-            const poster = getPoster(first);
-            // Send poster with caption
-            if (poster) {
-                await sock.sendMessage(from, { image: { url: poster }, caption: text }, { quoted: msg });
-            }
-            // Send catalog picker
-            try {
-                await sendInteractiveMessage(sock, from, {
-                    text: `🎬 *Results for "${query}"*\nPick a movie:`,
-                    footer: 'Megan Movie API',
-                    interactiveButtons: [{
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: 'Movies Found',
-                            sections: [{ title: 'Results', rows }]
-                        })
-                    }]
-                }, { quoted: msg });
-            } catch(e) {
-                // Fallback to text
-                let fallback = `🎬 *Results for "${query}"*\n\n`;
-                results.slice(0, 5).forEach((m, i) => {
-                    fallback += `*${i+1}.* ${m.title} (${m.year})\n⭐ ${m.rating} | ${m.genres.join(', ')}\n\n`;
+            const data = await apiGet(`/api/tmdb/popular/${type}`);
+            if (data.success && data.results?.length) {
+                let list = `🌟 *POPULAR ${type.toUpperCase()}*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => {
+                    list += `${i+1}. *${m.title || m.name}* ⭐${safeRating(m)}\n`;
                 });
-                fallback += `Reply .moviedl <number> to download\n${FOOTER}`;
-                await sendButtonsMsg(sock, from, fallback, msg);
-            }
-            await react('✅');
-        } catch (e) { await react('❌'); await sendButtonsMsg(sock, from, `❌ *No anime*\n\n${FOOTER}`, msg); }
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// Now Playing
+commands.push({ name: 'nowplaying', description: 'Movies now in theaters', aliases: ['nowshowing', 'cinema', 'theaters'],
+    async execute({ react, reply }) {
+        await react('🍿');
+        try {
+            const data = await apiGet('/api/tmdb/now-playing');
+            if (data.success && data.results?.length) {
+                let list = `🍿 *NOW PLAYING*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => list += `${i+1}. *${m.title}* ⭐${safeRating(m)}\n`);
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); }
+    }
+});
+
+// TV On Air
+commands.push({ name: 'onair', description: 'TV shows currently on air', aliases: ['tvonair', 'currenttv', 'airing'],
+    async execute({ react, reply }) {
+        await react('📺');
+        try {
+            const data = await apiGet('/api/tmdb/on-air');
+            if (data.success && data.results?.length) {
+                let list = `📺 *TV ON AIR NOW*\n\n`;
+                data.results.slice(0, 10).forEach((s, i) => list += `${i+1}. *${s.name}* ⭐${safeRating(s)}\n`);
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); }
+    }
+});
+
+// Top Rated
+commands.push({ name: 'toprated', description: 'Top rated movies of all time', aliases: ['bestmovies', 'topmovies'],
+    async execute({ react, reply }) {
+        await react('🏆');
+        try {
+            const data = await apiGet('/api/tmdb/top-rated');
+            if (data.success && data.results?.length) {
+                let list = `🏆 *TOP RATED MOVIES*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => list += `${i+1}. *${m.title}* ⭐${safeRating(m)}\n`);
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); }
+    }
+});
+
+// Upcoming
+commands.push({ name: 'upcoming', description: 'Upcoming movies', aliases: ['soon', 'comingsoon'],
+    async execute({ react, reply }) {
+        await react('📅');
+        try {
+            const data = await apiGet('/api/tmdb/upcoming');
+            if (data.success && data.results?.length) {
+                let list = `📅 *UPCOMING MOVIES*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => list += `${i+1}. *${m.title}* ${m.releaseDate||''}\n`);
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); }
     }
 });
 
 // ═══════════════════════════════════════════
-// HELP
+// 20-21: GENRES
 // ═══════════════════════════════════════════
 
-// 25. MOVIE HELP
-commands.push({
-    name: 'moviehelp', description: 'Show all movie commands',
-    aliases: ['movies', 'movie', 'cinemahelp'],
-    async execute({ msg, from, sender, args, bot, sock, react, reply }) {
-        const p = config.PREFIX;
-        const help = `╭───[ 🎬 MOVIE COMMANDS ]───\n\n` +
-            `├ 🔍 *SEARCH*\n├ ${p}moviesearch | ${p}tvsearch\n├ ${p}animesearch | ${p}movselect\n\n` +
-            `├ 📥 *DOWNLOAD*\n├ ${p}moviedl - Quick movie download\n├ ${p}tvdl - Quick TV episode\n├ ${p}animedl - Quick anime download\n\n` +
-            `├ 🔗 *STREAM*\n├ ${p}moviestream | ${p}tvstream\n\n` +
-            `├ 🔥 *BROWSE*\n├ ${p}trending | ${p}hot | ${p}cinema\n├ ${p}action | ${p}horror | ${p}romance\n├ ${p}adventure | ${p}kdrama | ${p}cdrama\n├ ${p}turkish | ${p}upcoming | ${p}animehome\n├ ${p}blackshows | ${p}smartstart\n\n` +
-            `╰───◇\n📡 Megan Movie API\n${FOOTER}`;
-        await sendButtonsMsg(sock, from, help, msg);
-        await react('✅');
+commands.push({ name: 'genres', description: 'Get all movie genres', aliases: ['moviegenres', 'categories', 'genrelist'],
+    async execute({ msg, from, args, react, reply }) {
+        const type = args[0] === 'tv' ? 'tv' : 'movies';
+        await react('🎭');
+        try {
+            const data = await apiGet(`/api/tmdb/genres/${type}`);
+            if (data.success && data.genres?.length) {
+                let list = `🎭 *${type.toUpperCase()} GENRES*\n\n`;
+                data.genres.forEach(g => list += `• ${g.name} (ID: ${g.id})\n`);
+                list += `\nUse ${config.PREFIX}genre <id> to browse\n\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No genres*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); }
+    }
+});
+
+// Genre Browse
+commands.push({ name: 'genre', description: 'Get movies by genre', aliases: ['genrelist', 'bygenre', 'genremovies'],
+    async execute({ msg, from, args, react, reply }) {
+        if (!args.length || isNaN(args[0])) return reply(`🎭 *MOVIES BY GENRE*\n\n*Usage:* ${config.PREFIX}genre <id>\n*Example:* ${config.PREFIX}genre 28 (Action)\n\nUse ${config.PREFIX}genres to see all IDs\n\n${FOOTER}`);
+        await react('🎭');
+        try {
+            const data = await apiGet(`/api/tmdb/genre/${args[0]}/movies`);
+            if (data.success && data.results?.length) {
+                let list = `🎭 *GENRE #${args[0]} MOVIES*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => list += `${i+1}. *${m.title}* ⭐${safeRating(m)}\n`);
+                list += `\n${FOOTER}`;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No movies found*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 22: TV SEASON
+// ═══════════════════════════════════════════
+commands.push({ name: 'season', description: 'Get TV season episodes', aliases: ['episodes', 'tvseason', 'seasoninfo'],
+    async execute({ msg, from, args, react, reply }) {
+        if (args.length < 2 || isNaN(args[0]) || isNaN(args[1])) return reply(`📂 *TV SEASON*\n\n*Usage:* ${config.PREFIX}season <tv_id> <season_num>\n*Example:* ${config.PREFIX}season 1396 1\n\n${FOOTER}`);
+        await react('📂');
+        try {
+            const data = await apiGet(`/api/tmdb/tv/${args[0]}/season/${args[1]}`);
+            if (data.success && data.episodes?.length) {
+                let list = `📂 *SEASON ${args[1]} - TV #${args[0]}*\n\n`;
+                data.episodes.forEach(ep => {
+                    list += `📺 *E${ep.episodeNumber}.* ${ep.name}\n   ⭐${safeRating(ep)} | 📅 ${ep.airDate||'TBA'}\n   ${(ep.overview||'').substring(0,80)}...\n\n`;
+                });
+                list += FOOTER;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No episodes found*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// 23-24: DISCOVER
+// ═══════════════════════════════════════════
+commands.push({ name: 'discover', description: 'Discover movies with filters', aliases: ['explore', 'findmovies', 'discovermovies'],
+    async execute({ msg, from, args, react, reply }) {
+        const type = args[0] === 'tv' ? 'tv' : 'movie';
+        await react('🔍');
+        try {
+            const params = {};
+            // Support: .discover movie genre=28 year=2024
+            args.slice(type === 'movie' ? 0 : 1).forEach(a => {
+                const [k, v] = a.split('=');
+                if (k && v) params[k] = v;
+            });
+            const data = await apiGet(`/api/tmdb/discover/${type}`, params);
+            if (data.success && data.results?.length) {
+                let list = `🔍 *DISCOVER ${type.toUpperCase()}*\n\n`;
+                data.results.slice(0, 10).forEach((m, i) => {
+                    list += `${i+1}. *${m.title || m.name}* ⭐${safeRating(m)}\n   ${(m.overview||'').substring(0,70)}...\n\n`;
+                });
+                list += FOOTER;
+                await reply(list);
+                await react('✅');
+            } else { await reply(`❌ *No results*\n\n${FOOTER}`); }
+        } catch (e) { await react('❌'); await reply(`❌ ${e.message}\n\n${FOOTER}`); }
+    }
+});
+
+// ═══════════════════════════════════════════
+// MOVIE MENU
+// ═══════════════════════════════════════════
+commands.push({ name: 'moviemenu', description: 'Show all TMDB movie commands', aliases: ['movies', 'moviehelp', 'cinemamenu'],
+    async execute({ react, reply }) {
+        const menu = `🎬 *MOVIE DB - Full TMDB Commands*
+
+*🔍 SEARCH*
+${config.PREFIX}movie <title> - Search movies
+${config.PREFIX}tv <show> - Search TV shows
+${config.PREFIX}actor <name> - Search people
+
+*📋 DETAILS*
+${config.PREFIX}movieid <id> - Movie details
+${config.PREFIX}tvid <id> - TV show details
+${config.PREFIX}person <id> - Person details
+${config.PREFIX}cast <id> - Movie cast & crew
+${config.PREFIX}season <tv_id> <num> - TV episodes
+
+*🎥 MEDIA*
+${config.PREFIX}trailer <id> - Movie trailers
+${config.PREFIX}movieimages <id> - Posters & backdrops
+${config.PREFIX}reviews <id> - User reviews
+${config.PREFIX}providers <id> - Where to watch
+
+*🔄 DISCOVER*
+${config.PREFIX}similar <id> - Similar movies
+${config.PREFIX}recommend <id> - Recommendations
+${config.PREFIX}filmos <id> - Actor filmography
+
+*🔥 LISTS*
+${config.PREFIX}trending [tv] [day/week] - Trending
+${config.PREFIX}popular [tv] - Popular
+${config.PREFIX}nowplaying - In theaters
+${config.PREFIX}onair - TV on air
+${config.PREFIX}toprated - Best rated
+${config.PREFIX}upcoming - Coming soon
+
+*🎭 GENRES*
+${config.PREFIX}genres [tv] - List genres
+${config.PREFIX}genre <id> - Browse by genre
+${config.PREFIX}discover [tv] key=val - Filter
+
+> Megan-Prime | TMDB Full | TrackerWanga`;
+        await reply(menu);
+        await react('🎬');
     }
 });
 

@@ -4,25 +4,32 @@ const axios = require('axios');
 class AIHandler {
     constructor(bot) {
         this.bot = bot;
-        this.apiBase = "https://apis.megan.qzz.io";
-        this.apiKey = "megan_admin_master";
+        this.apiBase = require("./developer").API_BASE;
+        this.apiKey = require("./developer").API_KEY;
         this.defaultBibleVersion = 'ESV';
         this.timeout = 30000;
     }
 
     async apiGet(endpoint, params = {}) {
         const url = `${this.apiBase}${endpoint}`;
-        const res = await axios.get(url, { params: { ...params, apikey: this.apiKey }, timeout: this.timeout });
+        const res = await axios.get(url, {
+            params: { ...params, apikey: this.apiKey },
+            timeout: this.timeout
+        });
         return res.data;
     }
 
     async apiPost(endpoint, data = {}) {
         const url = `${this.apiBase}${endpoint}`;
-        const res = await axios.post(url, data, { params: { apikey: this.apiKey }, timeout: this.timeout, headers: { 'Content-Type': 'application/json' } });
+        const res = await axios.post(url, data, {
+            params: { apikey: this.apiKey },
+            timeout: this.timeout,
+            headers: { 'Content-Type': 'application/json' }
+        });
         return res.data;
     }
 
-    // Generic AI chat (uses Megan API endpoints)
+    // Generic AI chat
     async callAI(endpoint, prompt) {
         try {
             const data = await this.apiGet(endpoint, { q: prompt });
@@ -44,7 +51,7 @@ class AIHandler {
         return await this.callAI('/api/ai/gpt', message);
     }
 
-    // Bible AI - Using Megan API
+    // Bible AI
     async bibleAI(question, translation = null) {
         try {
             const version = translation || this.defaultBibleVersion;
@@ -59,9 +66,12 @@ class AIHandler {
     }
 
     getBibleVersions() { return ['ESV', 'KJV', 'NASB20', 'ASV14', 'LSG', 'LUT', 'IRV', 'RVR09']; }
-    setBibleVersion(v) { if (this.getBibleVersions().includes(v)) { this.defaultBibleVersion = v; return true; } return false; }
+    setBibleVersion(v) {
+        if (this.getBibleVersions().includes(v)) { this.defaultBibleVersion = v; return true; }
+        return false;
+    }
 
-    // All Chat Models via Megan API
+    // === ALL AI MODELS (33 Total) ===
     async gptAI(prompt) { return await this.callAI('/api/ai/gpt', prompt) || 'GPT is thinking...'; }
     async claudeAI(prompt) { return await this.callAI('/api/ai/claude', prompt) || 'Claude is thinking...'; }
     async mistralAI(prompt) { return await this.callAI('/api/ai/mistral', prompt) || 'Mistral is thinking...'; }
@@ -96,7 +106,7 @@ class AIHandler {
     async wormGPT(prompt) { return await this.callAI('/api/ai/wormgpt', prompt) || 'WormGPT is thinking...'; }
     async replitAI(prompt) { return await this.callAI('/api/ai/replit', prompt) || 'Replit AI is thinking...'; }
 
-    // AI Tools
+    // === AI TOOLS ===
     async translate(text, from = 'auto', to = 'en') {
         try {
             const data = await this.apiPost('/api/ai/translate', { text, from, to });
@@ -137,7 +147,7 @@ class AIHandler {
         } catch (e) { return null; }
     }
 
-    // Image endpoints
+    // === IMAGE ENDPOINTS ===
     async generateImage(prompt) {
         try {
             const data = await this.apiPost('/api/ai/image/dall-e', { prompt });
@@ -178,7 +188,7 @@ class AIHandler {
         } catch (e) { return null; }
     }
 
-    // Legacy compatibility
+    // === LEGACY COMPATIBILITY ===
     async gitaAI(question) {
         return "Gita AI is now available via Megan API. Please use .megan or .gpt for questions.";
     }
