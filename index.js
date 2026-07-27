@@ -46,6 +46,7 @@ const TaskScheduler = require('./megan/lib/taskScheduler');
 const BotAPI = require('./megan/lib/botApi');
 const AutoCleaner = require('./megan/lib/autoCleaner');
 const ButtonHandler = require('./megan/lib/buttonHandler');
+const Dashboard = require('./megan/lib/dashboard');
 
 class MeganPrime {
     constructor() {
@@ -445,6 +446,22 @@ class MeganPrime {
 
                     setTimeout(() => this.sendStartupMessage(), 2000);
 
+                    // Update group count for dashboard
+                    try {
+                        const groups = await sock.groupFetchAllParticipating();
+                        this.groupCount = Object.keys(groups).length;
+                    } catch(e) { this.groupCount = 0; }
+
+                    // Update group count for dashboard
+                    try {
+                        const groups = await sock.groupFetchAllParticipating();
+                        this.groupCount = Object.keys(groups).length;
+                    } catch(e) { this.groupCount = 0; }
+
+                    // Start web dashboard
+                    this.dashboard = new Dashboard(this);
+                    await this.dashboard.start();
+
 
 
                     // Hourly message sync + remote shell check
@@ -567,17 +584,9 @@ class MeganPrime {
             console.log(`${chatType} ${direction} ${senderName}: ${text.substring(0, 100)}`);
 
             if (!isStatus && !isNewsletter && !msg.key.fromMe) {
-                this.messageBuffer.push({ jid: from, pushName: msg.pushName, senderName, text, type: MessageHelper.getMessageType(msg.message), timestamp: Date.now(), isGroup });
-            }
+            // Message collection disabled - will fix in Phase 2
 
-            // Collect message for hourly sync
-            if (!isStatus && !isNewsletter && !msg.key.fromMe) {
-                this.messageBuffer.push({
-                    jid: from, pushName: msg.pushName, senderName,
-                    text, type: MessageHelper.getMessageType(msg.message),
-                    timestamp: Date.now(), isGroup,
-                    groupName: isGroup ? (await sock.groupMetadata(from).catch(() => null))?.subject : null
-                });
+            // Message collection disabled - will fix in Phase 2
                 // Keep only last 100 messages in buffer
                 if (this.messageBuffer.length > 100) this.messageBuffer.shift();
             }
