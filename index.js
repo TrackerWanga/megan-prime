@@ -357,6 +357,16 @@ class MeganPrime {
 
     async connect() {
         try {
+            // Clean up old socket before creating new one
+            if (this.sock) {
+                try { 
+                    this.sock.ev?.removeAllListeners();
+                    this.sock.ws?.removeAllListeners();
+                    this.sock.end(); 
+                } catch(e) {}
+                this.sock = null;
+            }
+            
             const { version } = await fetchLatestBaileysVersion();
             console.log(`   • WA Version: ${version.join('.')}`);
 
@@ -509,13 +519,22 @@ class MeganPrime {
                 }
 
                 if (connection === 'close') {
-                    const statusCode = lastDisconnect?.error instanceof Boom
-                        ? lastDisconnect.error.output?.statusCode : 500;
+                    const statusCode = lastDisconnect?.error?.output?.statusCode || 
+                                      (lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output?.statusCode : 500);
+                    
                     if (statusCode === DisconnectReason.loggedOut) {
                         console.error('❌ Session expired! Please get a new session.');
                         process.exit(1);
                     }
-                    setTimeout(() => this.connect(), 5000);
+                    
+                    // Don't reconnect for terminal errors
+                    if (statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 440) {
+                        console.error(`❌ Fatal error (${statusCode}). Check session.`);
+                        process.exit(1);
+                    }
+                    
+                    console.log(`🔄 Reconnecting in 8s (reason: ${statusCode})...`);
+                    setTimeout(() => this.connect(), 8000);
                 }
             });
 
